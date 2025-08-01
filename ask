@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+ask - Simple Cursor AI CLI
+Usage: ask "your question"
+       echo "question" | ask
+       ask -m claude-3.5-sonnet "your question"
+"""
+
+import asyncio
+import sys
+import os
+import re
+
+def clean_response(text):
+    """Extract actual response text from protocol noise"""
+    if not text:
+        return ""
+    
+    # Remove UUIDs
+    text = re.sub(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', '', text)
+    
+    # Remove protocol markers like )'$ and M@
+    text = re.sub(r'\)[\'"]?\$', ' ', text)
+    text = re.sub(r'M@', '', text)
+    
+    # Remove any remaining special characters at start
+    text = re.sub(r'^[^a-zA-Z0-9\s]*', '', text)
+    
+    # Clean up whitespace
+    text = ' '.join(text.split())
+    
+    return text.strip()
+
+async def ask_cursor(prompt, model="gpt-4"):
+    """Get response from Cursor AI"""
+    # Import inside function to control when output happens
+    import io
+    import contextlib
+    
+    # Capture all output during import and execution
+    f = io.StringIO()
+    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+        from cursor_http2_client import CursorHTTP2Client
+        
+        client = CursorHTTP2Client()
+        response = await client.test_http2_breakthrough(prompt, model)
+    
+    return clean_response(response) if response else None
+
+def main():
+    # Parse command line
+    model = "gpt-4"
+    args = sys.argv[1:]
+    
+    # Check for model flag
+    if len(args) >= 2 and args[0] == "-m":
+        model = args[1]
+        args = args[2:]
+    
+    # Get prompt
+    if args:
+        prompt = ' '.join(args)
+    elif not sys.stdin.isatty():
+        prompt = sys.stdin.read().strip()
+    else:
+        print("Usage: ask 'your question'", file=sys.stderr)
+        print("   or: echo 'question' | ask", file=sys.stderr)
+        print("   or: ask -m claude-3.5-sonnet 'your question'", file=sys.stderr)
+        sys.exit(1)
+    
+    if not prompt:
+        sys.exit(0)
+    
+    # Get and print response
+    try:
+        response = asyncio.run(ask_cursor(prompt, model))
+        if response:
+            print(response)
+        else:
+            print("No response received", file=sys.stderr)
+            sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
