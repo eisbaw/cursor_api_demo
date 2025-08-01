@@ -309,7 +309,7 @@ class CursorProperProtobuf:
             'x-amzn-trace-id': f'Root={uuid.uuid4()}',
             'x-client-key': client_key,
             'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '0.48.7',  # TODO: Still works, hmm
+            'x-cursor-client-version': '1.1.3',
             'x-cursor-config-version': str(uuid.uuid4()),
             'x-cursor-timezone': 'Asia/Shanghai',
             'x-ghost-mode': 'true',
@@ -341,7 +341,7 @@ class CursorProperProtobuf:
             'x-amzn-trace-id': f'Root={uuid.uuid4()}',
             'x-client-key': client_key,
             'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '0.48.7',  # TODO: Still works, hmm
+            'x-cursor-client-version': '1.1.3',
             'x-cursor-config-version': str(uuid.uuid4()),
             'x-cursor-timezone': 'Asia/Shanghai',
             'x-ghost-mode': 'true',
