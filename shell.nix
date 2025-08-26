@@ -4,6 +4,9 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     # Python and package management
     python312
+    python312Packages.protobuf
+    python312Packages.httpx
+    python312Packages.h2
     uv
     
     # Development tools

@@ -13,6 +13,7 @@ import time
 import base64
 from cursor_auth_reader import CursorAuthReader
 from cursor_proper_protobuf import CursorProperProtobuf
+from cursor_streaming_decoder import CursorStreamDecoder
 
 class CursorHTTP2Client(CursorProperProtobuf):
     def __init__(self):
@@ -83,28 +84,38 @@ class CursorHTTP2Client(CursorProperProtobuf):
                     
                     if response.status_code == 200:
                         print("🎉 SUCCESS! HTTP/2 works! Streaming response:")
-                        full_text = ""
+                        
+                        # Use the proper streaming decoder based on Rust cursor-api
+                        decoder = CursorStreamDecoder()
+                        collected_content = []
                         chunk_count = 0
                         
                         async for chunk in response.aiter_bytes():
                             chunk_count += 1
                             
-                            # Try simple text extraction for now
-                            try:
-                                text = chunk.decode('utf-8', errors='ignore')
-                                # Filter out noise but keep meaningful content
-                                clean_text = ''.join(c for c in text if c.isprintable())
-                                if clean_text and len(clean_text) > 3:
-                                    full_text += clean_text
-                                    print(clean_text, end='', flush=True)
-                            except:
-                                pass
+                            # Feed chunk to decoder and get parsed messages
+                            messages = decoder.feed_data(chunk)
+                            for message in messages:
+                                print(f"[{message.msg_type.upper()}] {message.content[:100]}{'...' if len(message.content) > 100 else ''}")
+                                
+                                if message.msg_type == "content":
+                                    collected_content.append(message.content)
+                                elif message.msg_type == "stream_end":
+                                    print("📄 Stream ended")
+                                    break
                             
-                            if len(full_text) > 1000 or chunk_count > 50:
+                            # Safety limit
+                            if chunk_count > 100:
+                                print("⚠️  Stopping after 100 chunks")
                                 break
                         
-                        print(f"\n\n🎉 HTTP/2 SUCCESS! Got {chunk_count} chunks, {len(full_text)} chars!")
-                        return full_text
+                        if collected_content:
+                            result = ''.join(collected_content)
+                            print(f"\n🎉 SUCCESS! Properly decoded streaming response:")
+                            print(f"Total content length: {len(result)} characters")
+                            return result
+                        else:
+                            return "No content received"
                     else:
                         error = await response.aread()
                         print(f"❌ Error {response.status_code}: {error.decode('utf-8', errors='ignore')[:200]}")

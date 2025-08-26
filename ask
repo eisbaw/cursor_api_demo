@@ -12,23 +12,12 @@ import os
 import re
 
 def clean_response(text):
-    """Extract actual response text from protocol noise"""
+    """Response is already properly parsed from protobuf, minimal cleanup needed"""
     if not text:
         return ""
     
-    # Remove UUIDs
-    text = re.sub(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', '', text)
-    
-    # Remove protocol markers like )'$ and M@
-    text = re.sub(r'\)[\'"]?\$', ' ', text)
-    text = re.sub(r'M@', '', text)
-    
-    # Remove any remaining special characters at start
-    text = re.sub(r'^[^a-zA-Z0-9\s]*', '', text)
-    
-    # Clean up whitespace
-    text = ' '.join(text.split())
-    
+    # Response is now properly decoded using frame-based protobuf parsing
+    # Just preserve original formatting
     return text.strip()
 
 async def ask_cursor(prompt, model="gpt-4"):

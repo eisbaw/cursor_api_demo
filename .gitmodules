@@ -1,0 +1,9 @@
+[submodule "cursor-grpc"]
+	path = cursor-grpc
+	url = https://github.com/Jordan-Jarvis/cursor-grpc.git
+[submodule "code_of_c_u_r_s_o_r"]
+	path = code_of_c_u_r_s_o_r
+	url = https://github.com/zhifac/code_of_c_u_r_s_o_r.git
+[submodule "cursor-api"]
+	path = cursor-api
+	url = https://github.com/wisdgod/cursor-api.git
