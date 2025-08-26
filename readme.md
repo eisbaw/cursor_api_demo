@@ -2,30 +2,38 @@
 
 ## Demo
 
-```
-❯ nix-shell --run 'echo who are you | uv run ./ask -m claude-4-sonnet' | fmt
-I'm Claude, an AI coding assistant powered by Claude Sonnet 4, operating
-within Cursor. I'm here to help you#! with your coding tasks through pair
-programming.My main role is to:- Help you write, debug, and improve code-
-Answer programming questions- Assist with code reviews and refactoring-
-Provide guidance on best practices and solutions can see information about
-your current coding environment, including open files, cursor position,
-edit history, and linter errors when relevant designed to follow
-```
+```bash
+# Simple usage
+❯ ./ask "Hello! Please respond with: I am working perfectly!"
+I am working perfectly!
 
+# Quantum computing demo with Claude Sonnet 4
+❯ just demo
+Quantum computing is a revolutionary computational paradigm that leverages quantum mechanical phenomena like superposition and entanglement to process information in ways that classical computers cannot, allowing quantum bits (qubits) to exist in multiple states simultaneously rather than just the binary 0 or 1 states of classical bits. This enables quantum computers to potentially solve certain complex problems exponentially faster than classical computers, particularly in areas like cryptography, optimization, and scientific simulation, though current quantum computers are still in early development stages and face significant challenges with error rates and maintaining quantum coherence.
 
-## Errata
-There is still something to debug:
-
-```
-❯ nix-shell --run 'echo who are you | uv run ./ask -m claude-4-opus' | fmt
-4{"error":{"code":"resource_exhausted","message":"Error","details":[{"type":"aiserver.v1.ErrorDetails","debug":{"error":"ERROR_GPT_4_VISION_PREVIEW_RATE_LIMIT","details":{"title":"Model
-not allowed","detail":"Claude 4 Opus and Claude 4 Opus Thinking are
-only available with Max mode. Upgrade to version 0.50.0 to use these
-models."},"isExpected":true},"value":"CBw...
+# Available justfile commands
+❯ just help
+Available commands:
+  test       - Basic functionality test
+  demo       - Quantum computing demo with Claude Sonnet 4
+  code-demo  - Coding example with Claude Sonnet 4
+  models     - Show available models
+  test-all   - Run all tests
+  clean      - Clean up generated files
 ```
 
-Protobuf schemas are still to be obtained from the extracted squashfs AppImage.
+## Status: FIXED ✅
+
+**Previous Issue**: Fragmented/garbled output from streaming responses  
+**Root Cause**: Incorrect response parsing using regex instead of proper protobuf decoding  
+**Solution**: Implemented frame-based protobuf parser based on cursor-api Rust implementation  
+
+The streaming decoder now properly handles:
+- Frame format: `[msg_type:1byte][msg_len:4bytes_big_endian][protobuf_data]`
+- Message types: 0=protobuf, 1=gzip+protobuf, 2=json, 3=gzip+json
+- Nested protobuf structure: `StreamUnifiedChatResponseWithTools.stream_unified_chat_response.text`
+
+**Result**: Clean, properly formatted responses with no fragmentation.
 
 
 ## Overview
@@ -187,39 +195,49 @@ message StreamUnifiedChatWithToolsRequest {
 - `computeStreamUnifiedChatRequest` - Request builder
 - `warmSubmitChat` - Pre-warm chat system
 
-## Working Implementation Example
+## Working Implementation
 
+### Quick Start
+```bash
+# Enter nix shell for dependencies
+nix-shell
+
+# Simple test
+./ask "Hello!"
+
+# Use specific model
+./ask -m claude-4-sonnet "Explain quantum computing"
+
+# Run demos
+just demo      # Quantum computing explanation
+just test-all  # All tests
+```
+
+### Python Implementation Example
 ```python
-# 1. Extract auth token
-auth_token = get_bearer_token_from_sqlite()
+from cursor_streaming_decoder import CursorStreamDecoder
+from cursor_http2_client import CursorHTTP2Client
 
-# 2. Generate session
-session_id = uuid.uuid5(uuid.NAMESPACE_DNS, auth_token)
-client_key = hashlib.sha256(auth_token.encode()).hexdigest()
+# Initialize client (auto-reads auth from SQLite)
+client = CursorHTTP2Client()
 
-# 3. Establish session (HTTP/1.1)
-async with httpx.AsyncClient(http2=False) as client:
-    response = await client.post(
-        "https://api2.cursor.sh/aiserver.v1.AiService/AvailableModels",
-        headers={
-            "Authorization": f"Bearer {auth_token}",
-            "Content-Type": "application/proto",
-            "x-cursor-client-version": "0.48.7"
-        }
-    )
+# Send chat with proper streaming decode
+response = await client.test_http2_breakthrough(
+    prompt="Explain quantum computing", 
+    model="claude-4-sonnet"
+)
+print(response)  # Clean, formatted output
+```
 
-# 4. Send chat (HTTP/2)
-async with httpx.AsyncClient(http2=True) as client:
-    response = await client.post(
-        "https://api2.cursor.sh/aiserver.v1.ChatService/StreamUnifiedChatWithTools",
-        headers={
-            "Authorization": f"Bearer {auth_token}",
-            "Content-Type": "application/connect+proto",
-            "x-client-key": client_key,
-            "x-session-id": str(session_id)
-        },
-        content=encoded_protobuf
-    )
+### Key Implementation Details
+```python
+# Proper streaming decoder handles frame format
+decoder = CursorStreamDecoder()
+messages = decoder.feed_data(chunk)
+
+for message in messages:
+    if message.msg_type == "content":
+        print(message.content)  # Clean text, no fragmentation
 ```
 
 ## Key Discoveries
@@ -229,6 +247,9 @@ async with httpx.AsyncClient(http2=True) as client:
 3. **Session Sequence**: Must call AvailableModels before chat endpoints
 4. **ConnectRPC**: Uses Connect protocol, not standard gRPC-Web
 5. **Binary Encoding**: Messages use binary envelope with optional compression
+6. **Frame-Based Parsing**: Streaming responses require proper frame decoding, not text extraction
+7. **Protobuf Structure**: Nested `StreamUnifiedChatResponseWithTools` → `StreamUnifiedChatResponse` → `text` field
+8. **Compression Support**: Handles gzip compression (msg_type=1,3) and JSON fallback (msg_type=2,3)
 
 ## Application Keys
 - **Production**: `KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB`
