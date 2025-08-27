@@ -7,3 +7,9 @@
 [submodule "cursor-api"]
 	path = cursor-api
 	url = https://github.com/wisdgod/cursor-api.git
+[submodule "cursor-to-openai"]
+	path = cursor-to-openai
+	url = https://github.com/JiuZ-Chn/Cursor-To-OpenAI.git
+[submodule "crush"]
+	path = crush
+	url = https://github.com/charmbracelet/crush.git
