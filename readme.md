@@ -102,6 +102,22 @@ Authentication tokens are stored in SQLite database:
 - `cursorAuth/cachedEmail` - User email
 - `cursorAuth/stripeMembershipType` - Subscription type
 
+### Simple SQL Query
+This SQL Query easily get's all needed parts to use this project ``("cursorAuth/accessToken", "cursorAuth/cachedEmail", "cursorAuth/refreshToken", "cursorAuth/stripeMembershipType")``
+
+Download the SQL Viewer plugin from VSCode's marketplace or if you're risky you can inloop.github.io/sqlite-viewer
+
+```sql
+SELECT [key], value from ItemTable where [key] IN ('cursorAuth/accessToken', 'cursorAuth/refreshToken', 'cursorAuth/cachedEmail', 'cursorAuth/stripeMembershipType');
+```
+
+| Key | Value |
+| -- | -- |
+cursorAuth/accessToken | eyJhbGciO...
+cursorAuth/cachedEmail | YouEmail@ProbalyGMail.com
+cursorAuth/refreshToken	| eyJhbGciO...
+cursorAuth/stripeMembershipType | e.g (free_trial)
+
 ### Required Headers
 ```
 Authorization: Bearer {token}
