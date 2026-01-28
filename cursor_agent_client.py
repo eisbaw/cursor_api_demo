@@ -667,15 +667,15 @@ class CursorAgentClient:
     
     def _get_result_field_number(self, tool: int) -> int:
         """Get the field number for tool result in ClientSideToolV2Result"""
-        # Based on TASK-126-toolv2-params.md
+        # Based on TASK-26-tool-schemas.md ClientSideToolV2Result
         result_field_map = {
-            ClientSideToolV2.READ_FILE: 6,
-            ClientSideToolV2.LIST_DIR: 9,
-            ClientSideToolV2.RIPGREP_SEARCH: 4,
-            ClientSideToolV2.RUN_TERMINAL_COMMAND_V2: 21,
-            ClientSideToolV2.EDIT_FILE: 11,
-            ClientSideToolV2.FILE_SEARCH: 10,
-            ClientSideToolV2.GLOB_FILE_SEARCH: 51,
+            ClientSideToolV2.READ_FILE: 6,          # read_file_result
+            ClientSideToolV2.LIST_DIR: 9,           # list_dir_result
+            ClientSideToolV2.RIPGREP_SEARCH: 4,     # ripgrep_search_result
+            ClientSideToolV2.RUN_TERMINAL_COMMAND_V2: 24,  # run_terminal_command_v2_result
+            ClientSideToolV2.EDIT_FILE: 10,         # edit_file_result
+            ClientSideToolV2.FILE_SEARCH: 11,       # file_search_result
+            ClientSideToolV2.GLOB_FILE_SEARCH: 51,  # glob_file_search_result
         }
         return result_field_map.get(tool, 2)  # Default to field 2
     

@@ -4,6 +4,7 @@ title: Encode and send ClientSideToolV2Result back to server
 status: To Do
 assignee: []
 created_date: '2026-01-28 10:06'
+updated_date: '2026-01-28 10:20'
 labels:
   - implementation
   - protobuf
@@ -32,3 +33,9 @@ Implement encoding of tool results to send back:
 - [ ] #2 tool_call_id matches original request
 - [ ] #3 Result framing matches request framing
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Blocked: httpx doesn't support HTTP/2 bidi streaming. Options: grpclib, raw h2, SSE+BidiAppend
+<!-- SECTION:NOTES:END -->

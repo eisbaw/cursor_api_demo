@@ -1,9 +1,10 @@
 ---
 id: TASK-301
 title: Implement Python Agent Client with Tool Calling Support
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-01-28 10:04'
+updated_date: '2026-01-28 10:20'
 labels:
   - implementation
   - agent
@@ -27,9 +28,15 @@ Create cursor_agent_client.py - a full agent client supporting bidirectional str
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Agent mode request encoding works (unified_mode=AGENT, is_agentic=true, supported_tools list)
+- [x] #1 Agent mode request encoding works (unified_mode=AGENT, is_agentic=true, supported_tools list)
 - [ ] #2 Bidirectional streaming established with tool call/result exchange
-- [ ] #3 Basic tools implemented: read_file, list_dir, grep_search
+- [x] #3 Basic tools implemented: read_file, list_dir, grep_search
 - [ ] #4 Tool results sent back to server correctly
 - [ ] #5 End-to-end agent conversation works
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+3/5 subtasks done. AC#1 and AC#3 met. Blocking: httpx lacks HTTP/2 bidi support for AC#2 and AC#4.
+<!-- SECTION:NOTES:END -->

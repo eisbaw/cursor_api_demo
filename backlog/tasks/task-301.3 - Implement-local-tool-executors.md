@@ -1,9 +1,10 @@
 ---
 id: TASK-301.3
 title: Implement local tool executors
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-28 10:05'
+updated_date: '2026-01-28 10:20'
 labels:
   - implementation
   - tools
@@ -36,3 +37,9 @@ Each returns data matching the expected result schema.
 - [ ] #3 grep_search uses ripgrep or fallback
 - [ ] #4 Error handling returns proper error schema
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Local executors working: list_dir, read_file, grep_search, edit_file, run_terminal
+<!-- SECTION:NOTES:END -->

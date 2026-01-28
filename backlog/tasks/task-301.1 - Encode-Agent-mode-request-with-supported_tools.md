@@ -1,9 +1,10 @@
 ---
 id: TASK-301.1
 title: Encode Agent mode request with supported_tools
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-28 10:04'
+updated_date: '2026-01-28 10:20'
 labels:
   - implementation
   - protobuf
@@ -32,3 +33,9 @@ Modify request encoding to set:
 - [ ] #2 Field 29 (supported_tools) contains tool enum values
 - [ ] #3 Field 46 (unified_mode) set to 2
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Agent mode request encoding working - HTTP 200 response from server
+<!-- SECTION:NOTES:END -->

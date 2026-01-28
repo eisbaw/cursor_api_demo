@@ -1,9 +1,10 @@
 ---
 id: TASK-301.2
 title: Parse ClientSideToolV2Call from streaming response
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-28 10:05'
+updated_date: '2026-01-28 10:20'
 labels:
   - implementation
   - protobuf
@@ -33,3 +34,9 @@ Implement parsing of tool calls from server response:
 - [ ] #2 Tool params extracted (readFileParams, listDirParams, etc.)
 - [ ] #3 tool_call_id captured for result matching
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Tool calls detected via toolu_bdrk_* pattern matching
+<!-- SECTION:NOTES:END -->

@@ -4,6 +4,7 @@ title: Implement bidirectional streaming with tool call loop
 status: To Do
 assignee: []
 created_date: '2026-01-28 10:06'
+updated_date: '2026-01-28 10:20'
 labels:
   - implementation
   - streaming
@@ -37,3 +38,9 @@ Use httpx with HTTP/2 for true bidi or implement append/poll fallback.
 - [ ] #3 Multiple sequential tool calls handled
 - [ ] #4 Stream closes cleanly
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Blocked: depends on 301.4. Tool result encoding ready, transport layer needed
+<!-- SECTION:NOTES:END -->
