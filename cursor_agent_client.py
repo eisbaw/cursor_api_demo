@@ -717,6 +717,8 @@ class CursorAgentClient:
             # RipgrepSearchResult: internal=1(RipgrepSearchResultInternal)
             # RipgrepSearchResultInternal: results=1(repeated IFileMatch), exit=2(enum)
             # IFileMatch: resource=1(string), results=2(repeated ITextSearchResult)
+            # ITextSearchResult: match=1(ITextSearchMatch oneof)
+            # ITextSearchMatch: range_locations=2(repeated), preview_text=3(string)
             internal_msg = b''
             
             # Group matches by file path
@@ -735,7 +737,32 @@ class CursorAgentClient:
                 file_match_msg = b''
                 # resource = 1 (file path)
                 file_match_msg += ProtobufEncoder.encode_field(1, 2, file_path)
-                # Note: results=2 would contain ITextSearchResult, but we skip detailed encoding
+                
+                # results = 2 (repeated ITextSearchResult)
+                for match in file_matches:
+                    line_content = match.get('line_content', '')
+                    line_number = match.get('line_number', 0)
+                    
+                    # ITextSearchMatch: preview_text=3
+                    text_search_match = b''
+                    text_search_match += ProtobufEncoder.encode_field(3, 2, line_content)
+                    
+                    # Optionally add range_locations for line number
+                    if line_number:
+                        # ISearchRangeSetPairing: source=1(Range)
+                        # Range: startLineNumber=1, startColumn=2, endLineNumber=3, endColumn=4
+                        range_msg = b''
+                        range_msg += ProtobufEncoder.encode_field(1, 0, line_number)  # startLineNumber
+                        range_msg += ProtobufEncoder.encode_field(2, 0, 1)  # startColumn
+                        range_msg += ProtobufEncoder.encode_field(3, 0, line_number)  # endLineNumber
+                        range_msg += ProtobufEncoder.encode_field(4, 0, len(line_content) + 1)  # endColumn
+                        pairing = ProtobufEncoder.encode_field(1, 2, range_msg)  # source
+                        text_search_match += ProtobufEncoder.encode_field(2, 2, pairing)
+                    
+                    # ITextSearchResult: match=1 (oneof field)
+                    text_search_result = ProtobufEncoder.encode_field(1, 2, text_search_match)
+                    file_match_msg += ProtobufEncoder.encode_field(2, 2, text_search_result)
+                
                 internal_msg += ProtobufEncoder.encode_field(1, 2, file_match_msg)
             
             # exit = NORMAL (1)
