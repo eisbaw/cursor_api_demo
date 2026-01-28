@@ -27,7 +27,7 @@ import h2.events
 import h2.config
 
 from cursor_auth_reader import CursorAuthReader
-from cursor_chat_proto import ProtobufEncoder
+from cursor_chat_proto import ProtobufEncoder, ProtobufDecoder, ToolCallDecoder
 
 
 # Import from agent client
@@ -175,109 +175,155 @@ class CursorBidiClient:
         return msg
     
     def parse_tool_call(self, data: bytes) -> Optional[ToolCall]:
-        """Parse tool call from response data - only returns when we have params"""
+        """Parse tool call from response data using protobuf decoding
+        
+        Based on TASK-26-tool-schemas.md ClientSideToolV2Call:
+        - tool = field 1 (enum)
+        - tool_call_id = field 3 (string)
+        - name = field 9 (string)
+        - raw_args = field 10 (string, JSON)
+        """
+        # Tool enum to name mapping (from TASK-110-tool-enum-mapping.md)
+        enum_to_name = {
+            ClientSideToolV2.LIST_DIR: 'list_dir',
+            ClientSideToolV2.READ_FILE: 'read_file',
+            ClientSideToolV2.EDIT_FILE: 'edit_file',
+            ClientSideToolV2.DELETE_FILE: 'delete_file',
+            ClientSideToolV2.FILE_SEARCH: 'file_search',
+            ClientSideToolV2.GLOB_FILE_SEARCH: 'glob_file_search',
+            ClientSideToolV2.RIPGREP_SEARCH: 'grep_search',
+            ClientSideToolV2.SEMANTIC_SEARCH_FULL: 'codebase_search',
+            ClientSideToolV2.SEARCH_SYMBOLS: 'search_symbols',
+            ClientSideToolV2.DEEP_SEARCH: 'deep_search',
+            ClientSideToolV2.RUN_TERMINAL_COMMAND_V2: 'run_terminal_cmd',
+            ClientSideToolV2.WEB_SEARCH: 'web_search',
+            ClientSideToolV2.FETCH_RULES: 'fetch_rules',
+            ClientSideToolV2.FETCH_PULL_REQUEST: 'fetch_pull_request',
+            ClientSideToolV2.MCP: 'mcp',
+            ClientSideToolV2.CALL_MCP_TOOL: 'call_mcp_tool',
+            ClientSideToolV2.LIST_MCP_RESOURCES: 'list_mcp_resources',
+            ClientSideToolV2.READ_MCP_RESOURCE: 'read_mcp_resource',
+            ClientSideToolV2.TASK: 'task',
+            ClientSideToolV2.AWAIT_TASK: 'await_task',
+            ClientSideToolV2.TODO_READ: 'todo_read',
+            ClientSideToolV2.TODO_WRITE: 'todo_write',
+            ClientSideToolV2.CREATE_PLAN: 'create_plan',
+            ClientSideToolV2.REAPPLY: 'reapply',
+            ClientSideToolV2.GO_TO_DEFINITION: 'go_to_definition',
+            ClientSideToolV2.CREATE_DIAGRAM: 'create_diagram',
+            ClientSideToolV2.FIX_LINTS: 'fix_lints',
+            ClientSideToolV2.READ_LINTS: 'read_lints',
+            ClientSideToolV2.ASK_QUESTION: 'ask_question',
+            ClientSideToolV2.SWITCH_MODE: 'switch_mode',
+            ClientSideToolV2.GENERATE_IMAGE: 'generate_image',
+            ClientSideToolV2.COMPUTER_USE: 'computer_use',
+            ClientSideToolV2.LIST_DIR_V2: 'list_dir_v2',
+            ClientSideToolV2.READ_FILE_V2: 'read_file_v2',
+            ClientSideToolV2.EDIT_FILE_V2: 'edit_file_v2',
+        }
+        
+        # Tools that require params before execution
+        tools_needing_params = {
+            ClientSideToolV2.FILE_SEARCH, ClientSideToolV2.RIPGREP_SEARCH,
+            ClientSideToolV2.READ_FILE, ClientSideToolV2.EDIT_FILE,
+            ClientSideToolV2.RUN_TERMINAL_COMMAND_V2, ClientSideToolV2.GLOB_FILE_SEARCH,
+            ClientSideToolV2.WEB_SEARCH, ClientSideToolV2.SEMANTIC_SEARCH_FULL,
+            ClientSideToolV2.DEEP_SEARCH, ClientSideToolV2.SEARCH_SYMBOLS,
+            ClientSideToolV2.DELETE_FILE, ClientSideToolV2.TODO_WRITE,
+            ClientSideToolV2.CREATE_PLAN, ClientSideToolV2.CALL_MCP_TOOL,
+        }
+        
         try:
+            # Try protobuf decoding first
+            tool_calls = ToolCallDecoder.find_tool_calls(data)
+            for tc in tool_calls:
+                tool_enum = tc['tool']
+                tool_call_id = tc['tool_call_id']
+                raw_args = tc['raw_args']
+                name = tc['name'] or enum_to_name.get(tool_enum, f'tool_{tool_enum}')
+                
+                # Parse JSON params from raw_args
+                params = {}
+                if raw_args:
+                    try:
+                        params = json.loads(raw_args)
+                    except:
+                        pass
+                
+                # Check if this tool needs params
+                if tool_enum in tools_needing_params and not params:
+                    continue  # Skip until params arrive
+                
+                return ToolCall(
+                    tool=tool_enum,
+                    tool_call_id=tool_call_id,
+                    name=name,
+                    raw_args=raw_args,
+                    params=params
+                )
+            
+            # Fallback: regex-based detection for tool call IDs in text
+            # This catches cases where protobuf nesting is different
+            import re
             text = data.decode('utf-8', errors='ignore')
             
             # Look for tool call ID pattern
-            import re
-            # Pattern: toolu_bdrk_ followed by exactly 26 alphanumeric chars
-            tool_id_match = re.search(r'(toolu_bdrk_[a-zA-Z0-9]{26})', text)
-            if not tool_id_match:
-                tool_id_match = re.search(r'(toolu_[a-zA-Z0-9_]{20,32})', text)
+            tool_id_match = re.search(r'(toolu_bdrk_[a-zA-Z0-9]{24,28})', text)
             if not tool_id_match:
                 return None
             
             tool_call_id = tool_id_match.group(1)
             
-            # Find tool name - comprehensive mapping from TASK-110-tool-enum-mapping.md
-            tool_name = None
-            name_to_enum = {
-                # Core file operations
-                'list_dir': ClientSideToolV2.LIST_DIR,
-                'read_file': ClientSideToolV2.READ_FILE,
-                'edit_file': ClientSideToolV2.EDIT_FILE,
-                'delete_file': ClientSideToolV2.DELETE_FILE,
-                'file_search': ClientSideToolV2.FILE_SEARCH,
-                'glob_file_search': ClientSideToolV2.GLOB_FILE_SEARCH,
-                # Search operations
-                'grep_search': ClientSideToolV2.RIPGREP_SEARCH,
-                'ripgrep_search': ClientSideToolV2.RIPGREP_SEARCH,
-                'codebase_search': ClientSideToolV2.SEMANTIC_SEARCH_FULL,
-                'search_symbols': ClientSideToolV2.SEARCH_SYMBOLS,
-                'deep_search': ClientSideToolV2.DEEP_SEARCH,
-                # Terminal
-                'run_terminal_command': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
-                'run_terminal_cmd': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
-                # Web/external
-                'web_search': ClientSideToolV2.WEB_SEARCH,
-                'fetch_rules': ClientSideToolV2.FETCH_RULES,
-                'fetch_pull_request': ClientSideToolV2.FETCH_PULL_REQUEST,
-                # MCP
-                'mcp': ClientSideToolV2.MCP,
-                'call_mcp_tool': ClientSideToolV2.CALL_MCP_TOOL,
-                'list_mcp_resources': ClientSideToolV2.LIST_MCP_RESOURCES,
-                'read_mcp_resource': ClientSideToolV2.READ_MCP_RESOURCE,
-                # Task/Agent
-                'task': ClientSideToolV2.TASK,
-                'await_task': ClientSideToolV2.AWAIT_TASK,
-                'todo_read': ClientSideToolV2.TODO_READ,
-                'todo_write': ClientSideToolV2.TODO_WRITE,
-                'create_plan': ClientSideToolV2.CREATE_PLAN,
-                # Misc
-                'reapply': ClientSideToolV2.REAPPLY,
-                'go_to_definition': ClientSideToolV2.GO_TO_DEFINITION,
-                'gotodef': ClientSideToolV2.GO_TO_DEFINITION,
-                'create_diagram': ClientSideToolV2.CREATE_DIAGRAM,
-                'fix_lints': ClientSideToolV2.FIX_LINTS,
-                'read_lints': ClientSideToolV2.READ_LINTS,
-                'ask_question': ClientSideToolV2.ASK_QUESTION,
-                'switch_mode': ClientSideToolV2.SWITCH_MODE,
-                'generate_image': ClientSideToolV2.GENERATE_IMAGE,
-                'computer_use': ClientSideToolV2.COMPUTER_USE,
-                # V2 versions
-                'list_dir_v2': ClientSideToolV2.LIST_DIR_V2,
-                'read_file_v2': ClientSideToolV2.READ_FILE_V2,
-                'edit_file_v2': ClientSideToolV2.EDIT_FILE_V2,
-            }
+            # Look for raw_args JSON that contains known param keys
+            raw_args_match = re.search(
+                r'\{[^{}]*"(command|relative_workspace_path|query|pattern|search_term|directory_path)"[^{}]+\}',
+                text, re.IGNORECASE
+            )
             
-            for name in name_to_enum:
-                if re.search(rf'\b{name}\b', text, re.IGNORECASE):
-                    tool_name = name
-                    break
+            if not raw_args_match:
+                return None  # No params yet
             
-            if not tool_name:
+            raw_args = raw_args_match.group()
+            try:
+                params = json.loads(raw_args)
+            except:
                 return None
             
-            # Extract JSON params - REQUIRED for most tools
-            params = {}
-            # Look for complete JSON object with at least one key-value pair
-            json_match = re.search(r'\{[^{}]*"[a-z_]+":\s*[^{}]+\}', text, re.IGNORECASE)
-            if json_match:
-                try:
-                    params = json.loads(json_match.group())
-                except:
-                    pass
+            # Infer tool type from params
+            tool_enum = ClientSideToolV2.UNSPECIFIED
+            name = 'unknown'
             
-            # Tools that can work without params (list_dir with default path)
-            tools_needing_params = {
-                'file_search', 'grep_search', 'ripgrep_search', 'read_file', 
-                'edit_file', 'run_terminal_command', 'run_terminal_cmd', 'glob_file_search',
-                'web_search', 'codebase_search', 'deep_search', 'search_symbols',
-                'delete_file', 'todo_write', 'create_plan', 'call_mcp_tool',
-            }
+            if 'command' in params:
+                tool_enum = ClientSideToolV2.RUN_TERMINAL_COMMAND_V2
+                name = 'run_terminal_cmd'
+            elif 'relative_workspace_path' in params and 'old_string' in params:
+                tool_enum = ClientSideToolV2.EDIT_FILE
+                name = 'edit_file'
+            elif 'relative_workspace_path' in params or 'directory_path' in params:
+                tool_enum = ClientSideToolV2.LIST_DIR
+                name = 'list_dir'
+            elif 'query' in params:
+                tool_enum = ClientSideToolV2.FILE_SEARCH
+                name = 'file_search'
+            elif 'pattern' in params:
+                tool_enum = ClientSideToolV2.RIPGREP_SEARCH
+                name = 'grep_search'
+            elif 'search_term' in params:
+                tool_enum = ClientSideToolV2.WEB_SEARCH
+                name = 'web_search'
             
-            if tool_name in tools_needing_params and not params:
-                return None  # Wait for params to arrive
+            if tool_enum == ClientSideToolV2.UNSPECIFIED:
+                return None
             
             return ToolCall(
-                tool=name_to_enum[tool_name],
+                tool=tool_enum,
                 tool_call_id=tool_call_id,
-                name=tool_name,
-                raw_args=json_match.group() if json_match else '',
+                name=name,
+                raw_args=raw_args,
                 params=params
             )
-        except:
+            
+        except Exception as e:
             return None
     
     def connect(self) -> bool:
