@@ -1,2 +1,8 @@
 __pycache__/
 .venv/
+
+# Sensitive config files with tokens
+crush.json
+opencode.json
+*.env
+.env.*
