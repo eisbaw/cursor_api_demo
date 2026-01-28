@@ -175,35 +175,36 @@ class CursorBidiClient:
         return msg
     
     def parse_tool_call(self, data: bytes) -> Optional[ToolCall]:
-        """Parse tool call from response data"""
+        """Parse tool call from response data - only returns when we have params"""
         try:
             text = data.decode('utf-8', errors='ignore')
             
             # Look for tool call ID pattern
             import re
             # Pattern: toolu_bdrk_ followed by exactly 26 alphanumeric chars
-            # Don't require word boundary since tool name often follows directly
             tool_id_match = re.search(r'(toolu_bdrk_[a-zA-Z0-9]{26})', text)
             if not tool_id_match:
-                # Also try older/variant formats
                 tool_id_match = re.search(r'(toolu_[a-zA-Z0-9_]{20,32})', text)
             if not tool_id_match:
                 return None
             
             tool_call_id = tool_id_match.group(1)
             
-            # Find tool name - look for it as a word boundary
+            # Find tool name
             tool_name = None
             name_to_enum = {
                 'list_dir': ClientSideToolV2.LIST_DIR,
                 'read_file': ClientSideToolV2.READ_FILE,
                 'grep_search': ClientSideToolV2.RIPGREP_SEARCH,
+                'ripgrep_search': ClientSideToolV2.RIPGREP_SEARCH,
                 'edit_file': ClientSideToolV2.EDIT_FILE,
                 'run_terminal_command': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
+                'run_terminal_cmd': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
+                'file_search': ClientSideToolV2.FILE_SEARCH,
+                'glob_file_search': ClientSideToolV2.GLOB_FILE_SEARCH,
             }
             
             for name in name_to_enum:
-                # Match tool name as a word
                 if re.search(rf'\b{name}\b', text, re.IGNORECASE):
                     tool_name = name
                     break
@@ -211,14 +212,24 @@ class CursorBidiClient:
             if not tool_name:
                 return None
             
-            # Try to extract JSON params
+            # Extract JSON params - REQUIRED for most tools
             params = {}
-            json_match = re.search(r'\{[^{}]*"[^{}]+\}', text)
+            # Look for complete JSON object with at least one key-value pair
+            json_match = re.search(r'\{[^{}]*"[a-z_]+":\s*[^{}]+\}', text, re.IGNORECASE)
             if json_match:
                 try:
                     params = json.loads(json_match.group())
                 except:
                     pass
+            
+            # For tools that need params, only return if we have them
+            tools_needing_params = {
+                'file_search', 'grep_search', 'ripgrep_search', 'read_file', 
+                'edit_file', 'run_terminal_command', 'run_terminal_cmd', 'glob_file_search'
+            }
+            
+            if tool_name in tools_needing_params and not params:
+                return None  # Wait for params to arrive
             
             return ToolCall(
                 tool=name_to_enum[tool_name],

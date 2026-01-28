@@ -120,6 +120,10 @@ class ToolExecutor:
                 return self._run_terminal(params)
             elif tool == ClientSideToolV2.EDIT_FILE:
                 return self._edit_file(params)
+            elif tool == ClientSideToolV2.FILE_SEARCH:
+                return self._file_search(params)
+            elif tool == ClientSideToolV2.GLOB_FILE_SEARCH:
+                return self._glob_file_search(params)
             else:
                 return ToolResult(
                     success=False,
@@ -326,6 +330,61 @@ class ToolExecutor:
                         'relative_workspace_path': path,
                     }
                 )
+        except Exception as e:
+            return ToolResult(False, {}, str(e))
+    
+    def _file_search(self, params: Dict) -> ToolResult:
+        """Execute file_search tool - find files by name pattern"""
+        query = params.get('query', '')
+        
+        if not query:
+            return ToolResult(False, {}, "No query provided")
+        
+        try:
+            # Use find or fd to search for files
+            files = []
+            for path in self.workspace_root.rglob(f'*{query}*'):
+                if path.is_file() and not any(p.startswith('.') for p in path.parts):
+                    rel_path = str(path.relative_to(self.workspace_root))
+                    files.append({'uri': rel_path})
+                    if len(files) >= 50:  # Limit results
+                        break
+            
+            return ToolResult(
+                success=True,
+                data={
+                    'files': files,
+                    'num_results': len(files),
+                    'limit_hit': len(files) >= 50,
+                }
+            )
+        except Exception as e:
+            return ToolResult(False, {}, str(e))
+    
+    def _glob_file_search(self, params: Dict) -> ToolResult:
+        """Execute glob_file_search tool - find files by glob pattern"""
+        pattern = params.get('pattern', params.get('glob_pattern', ''))
+        
+        if not pattern:
+            return ToolResult(False, {}, "No pattern provided")
+        
+        try:
+            files = []
+            for path in self.workspace_root.glob(pattern):
+                if path.is_file():
+                    rel_path = str(path.relative_to(self.workspace_root))
+                    files.append({'uri': rel_path})
+                    if len(files) >= 100:
+                        break
+            
+            return ToolResult(
+                success=True,
+                data={
+                    'files': files,
+                    'num_results': len(files),
+                    'limit_hit': len(files) >= 100,
+                }
+            )
         except Exception as e:
             return ToolResult(False, {}, str(e))
 
@@ -655,23 +714,72 @@ class CursorAgentClient:
                 msg += ProtobufEncoder.encode_field(2, 2, data['directory_path'])
             
         elif tool == ClientSideToolV2.RIPGREP_SEARCH:
-            # RipgrepSearchResult - encode matches
-            matches_str = json.dumps(data.get('matches', []))
-            msg += ProtobufEncoder.encode_field(1, 2, matches_str)
+            # RipgrepSearchResult: internal=1(RipgrepSearchResultInternal)
+            # RipgrepSearchResultInternal: results=1(repeated IFileMatch), exit=2(enum)
+            # IFileMatch: resource=1(string), results=2(repeated ITextSearchResult)
+            internal_msg = b''
+            
+            # Group matches by file path
+            matches = data.get('matches', [])
+            files_dict = {}
+            for match in matches:
+                if isinstance(match, dict):
+                    path = match.get('path', '')
+                    if path:
+                        if path not in files_dict:
+                            files_dict[path] = []
+                        files_dict[path].append(match)
+            
+            # Encode each file's matches as IFileMatch
+            for file_path, file_matches in files_dict.items():
+                file_match_msg = b''
+                # resource = 1 (file path)
+                file_match_msg += ProtobufEncoder.encode_field(1, 2, file_path)
+                # Note: results=2 would contain ITextSearchResult, but we skip detailed encoding
+                internal_msg += ProtobufEncoder.encode_field(1, 2, file_match_msg)
+            
+            # exit = NORMAL (1)
+            internal_msg += ProtobufEncoder.encode_field(2, 0, 1)
+            
+            # Wrap in RipgrepSearchResult.internal
+            msg += ProtobufEncoder.encode_field(1, 2, internal_msg)
             
         elif tool == ClientSideToolV2.RUN_TERMINAL_COMMAND_V2:
-            # RunTerminalCommandV2Result
-            if 'stdout' in data:
-                msg += ProtobufEncoder.encode_field(1, 2, data['stdout'])
-            if 'stderr' in data:
-                msg += ProtobufEncoder.encode_field(2, 2, data['stderr'])
+            # RunTerminalCommandV2Result: output=1(string), exit_code=2(int32), rejected=3(bool)
+            # Combine stdout and stderr into output
+            output = data.get('stdout', '') or data.get('output', '')
+            if data.get('stderr'):
+                output += '\n' + data['stderr']
+            if output:
+                msg += ProtobufEncoder.encode_field(1, 2, output)
             if 'exit_code' in data:
-                msg += ProtobufEncoder.encode_field(3, 0, data['exit_code'])
+                msg += ProtobufEncoder.encode_field(2, 0, data['exit_code'])
                 
         elif tool == ClientSideToolV2.EDIT_FILE:
-            # EditFileResult
+            # EditFileResult: is_applied=2(bool)
             if data.get('is_applied'):
                 msg += ProtobufEncoder.encode_field(2, 0, 1)  # is_applied = true
+        
+        elif tool == ClientSideToolV2.FILE_SEARCH:
+            # ToolCallFileSearchResult: files=1(repeated File), limit_hit=2(bool), num_results=3(int32)
+            # File: uri=1(string)
+            files = data.get('files', [])
+            for f in files:
+                file_msg = ProtobufEncoder.encode_field(1, 2, f.get('uri', ''))
+                msg += ProtobufEncoder.encode_field(1, 2, file_msg)
+            if data.get('limit_hit'):
+                msg += ProtobufEncoder.encode_field(2, 0, 1)
+            msg += ProtobufEncoder.encode_field(3, 0, data.get('num_results', len(files)))
+        
+        elif tool == ClientSideToolV2.GLOB_FILE_SEARCH:
+            # GlobFileSearchResult - same structure as FileSearchResult
+            files = data.get('files', [])
+            for f in files:
+                file_msg = ProtobufEncoder.encode_field(1, 2, f.get('uri', ''))
+                msg += ProtobufEncoder.encode_field(1, 2, file_msg)
+            if data.get('limit_hit'):
+                msg += ProtobufEncoder.encode_field(2, 0, 1)
+            msg += ProtobufEncoder.encode_field(3, 0, data.get('num_results', len(files)))
         
         return msg
     
@@ -750,8 +858,12 @@ class CursorAgentClient:
                         'list_dir': ClientSideToolV2.LIST_DIR,
                         'read_file': ClientSideToolV2.READ_FILE,
                         'grep_search': ClientSideToolV2.RIPGREP_SEARCH,
+                        'ripgrep_search': ClientSideToolV2.RIPGREP_SEARCH,
                         'edit_file': ClientSideToolV2.EDIT_FILE,
                         'run_terminal_command': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
+                        'run_terminal_cmd': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
+                        'file_search': ClientSideToolV2.FILE_SEARCH,
+                        'glob_file_search': ClientSideToolV2.GLOB_FILE_SEARCH,
                     }
                     
                     # Try to extract JSON params
