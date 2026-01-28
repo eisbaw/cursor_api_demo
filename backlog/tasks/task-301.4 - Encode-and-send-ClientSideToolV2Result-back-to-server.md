@@ -1,10 +1,10 @@
 ---
 id: TASK-301.4
 title: Encode and send ClientSideToolV2Result back to server
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-28 10:06'
-updated_date: '2026-01-28 10:20'
+updated_date: '2026-01-28 10:45'
 labels:
   - implementation
   - protobuf
@@ -37,5 +37,5 @@ Implement encoding of tool results to send back:
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Blocked: httpx doesn't support HTTP/2 bidi streaming. Options: grpclib, raw h2, SSE+BidiAppend
+ListDirResult encoding fixed - JSON to proper protobuf. Server accepts results.
 <!-- SECTION:NOTES:END -->
