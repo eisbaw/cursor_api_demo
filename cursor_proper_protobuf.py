@@ -333,7 +333,7 @@ class CursorProperProtobuf:
     
     async def establish_session(self, auth_token, session_id, client_key, cursor_checksum):
         """Call AvailableModels first to establish session"""
-        print("🔧 Establishing session...")
+        print("Establishing session...")
         
         url = f"{self.base_url}/aiserver.v1.AiService/AvailableModels"
         headers = {
@@ -361,7 +361,7 @@ class CursorProperProtobuf:
     
     async def send_chat_with_proper_protobuf(self, messages, model, auth_token, session_id, client_key, cursor_checksum):
         """Send chat with proper protobuf encoding"""
-        print(f"🎯 Sending to {model} with proper protobuf...")
+        print(f"Sending to {model} with proper protobuf...")
         
         # Generate proper protobuf body
         cursor_body = self.generate_cursor_body_exact(messages, model)
@@ -392,7 +392,7 @@ class CursorProperProtobuf:
                     print(f"Status: {response.status_code}")
                     
                     if response.status_code == 200:
-                        print("✅ SUCCESS! Streaming response:")
+                        print("SUCCESS: Streaming response:")
                         full_text = ""
                         chunk_count = 0
                         
@@ -411,21 +411,21 @@ class CursorProperProtobuf:
                             if len(full_text) > 1000 or chunk_count > 30:
                                 break
                         
-                        print(f"\n\n🎉 Got {chunk_count} chunks, {len(full_text)} chars total!")
+                        print(f"\n\nGot {chunk_count} chunks, {len(full_text)} chars total.")
                         return full_text
                     else:
                         error = await response.aread()
-                        print(f"❌ Error {response.status_code}: {error.decode('utf-8', errors='ignore')[:100]}")
+                        print(f"Error {response.status_code}: {error.decode('utf-8', errors='ignore')[:100]}")
                         
             except Exception as e:
-                print(f"❌ Exception: {str(e)}")
+                print(f"Exception: {str(e)}")
         
         return None
     
     async def test_proper_protobuf(self, prompt="Hello! Just say 'hi' back.", model="gpt-4"):
         """Test with proper protobuf implementation"""
         if not self.token:
-            print("❌ No token")
+            print("Error: No token")
             return None
         
         # Process auth token
@@ -438,7 +438,7 @@ class CursorProperProtobuf:
         client_key = self.generate_hashed_64_hex(auth_token)
         cursor_checksum = self.generate_cursor_checksum(auth_token)
         
-        print(f"🚀 PROPER PROTOBUF TEST")
+        print(f"Protobuf Test")
         print(f"Using exact JavaScript protobuf schema")
         print("=" * 50)
         print(f"Session: {session_id}")
@@ -447,7 +447,7 @@ class CursorProperProtobuf:
         # Establish session first
         session_ok = await self.establish_session(auth_token, session_id, client_key, cursor_checksum)
         if not session_ok:
-            print("❌ Session failed")
+            print("Error: Session failed")
             return None
         
         # Send chat with proper protobuf
@@ -467,10 +467,10 @@ async def main():
     )
     
     if result and len(result.strip()) > 10:
-        print(f"\n🎉 BREAKTHROUGH! We got an actual AI response!")
+        print(f"\nSUCCESS: Got AI response.")
         print(f"Response: {result[:300]}...")
     else:
-        print(f"\n🤔 Still working on it - but we have the exact protobuf schema now")
+        print(f"\nNo response received.")
 
 if __name__ == "__main__":
     asyncio.run(main())

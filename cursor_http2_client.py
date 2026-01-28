@@ -21,7 +21,7 @@ class CursorHTTP2Client(CursorProperProtobuf):
     
     async def establish_session_http2(self, auth_token, session_id, client_key, cursor_checksum):
         """Call AvailableModels - this works with HTTP/1.1"""
-        print("🔧 Establishing session (HTTP/1.1)...")
+        print("Establishing session (HTTP/1.1)...")
         
         import platform
         import sys
@@ -56,7 +56,7 @@ class CursorHTTP2Client(CursorProperProtobuf):
     
     async def send_chat_http2(self, messages, model, auth_token, session_id, client_key, cursor_checksum):
         """Send chat using HTTP/2 - THE KEY DIFFERENCE!"""
-        print(f"🚀 Sending to {model} with HTTP/2...")
+        print(f"Sending to {model} with HTTP/2...")
         
         import platform
         import sys
@@ -86,16 +86,16 @@ class CursorHTTP2Client(CursorProperProtobuf):
             'Host': 'api2.cursor.sh'
         }
         
-        # 🎯 THE BREAKTHROUGH: Use HTTP/2 instead of HTTP/1.1!
+        # Use HTTP/2 instead of HTTP/1.1
         async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
             try:
-                print("📡 Using HTTP/2 protocol...")
+                print("Using HTTP/2 protocol...")
                 async with client.stream('POST', url, headers=headers, content=cursor_body) as response:
                     print(f"Status: {response.status_code}")
                     print(f"HTTP version: {response.http_version}")
                     
                     if response.status_code == 200:
-                        print("🎉 SUCCESS! HTTP/2 works! Streaming response:")
+                        print("SUCCESS: HTTP/2 works. Streaming response:")
                         
                         # Use the proper streaming decoder based on Rust cursor-api
                         decoder = CursorStreamDecoder()
@@ -113,34 +113,34 @@ class CursorHTTP2Client(CursorProperProtobuf):
                                 if message.msg_type == "content":
                                     collected_content.append(message.content)
                                 elif message.msg_type == "stream_end":
-                                    print("📄 Stream ended")
+                                    print("Stream ended")
                                     break
                             
                             # Safety limit
                             if chunk_count > 100:
-                                print("⚠️  Stopping after 100 chunks")
+                                print("Warning: stopping after 100 chunks")
                                 break
                         
                         if collected_content:
                             result = ''.join(collected_content)
-                            print(f"\n🎉 SUCCESS! Properly decoded streaming response:")
+                            print(f"\nSUCCESS: Properly decoded streaming response:")
                             print(f"Total content length: {len(result)} characters")
                             return result
                         else:
                             return "No content received"
                     else:
                         error = await response.aread()
-                        print(f"❌ Error {response.status_code}: {error.decode('utf-8', errors='ignore')[:200]}")
+                        print(f"Error {response.status_code}: {error.decode('utf-8', errors='ignore')[:200]}")
                         
             except Exception as e:
-                print(f"❌ Exception: {str(e)}")
+                print(f"Exception: {str(e)}")
         
         return None
     
     async def test_http2_breakthrough(self, prompt="Hello! Please respond with 'Hi from Cursor API!'", model="gpt-4"):
         """Test the HTTP/2 breakthrough"""
         if not self.token:
-            print("❌ No token")
+            print("Error: No token")
             return None
         
         # Process auth token
@@ -153,7 +153,7 @@ class CursorHTTP2Client(CursorProperProtobuf):
         client_key = self.generate_hashed_64_hex(auth_token)
         cursor_checksum = self.generate_cursor_checksum(auth_token)
         
-        print(f"🎯 HTTP/2 BREAKTHROUGH TEST")
+        print(f"HTTP/2 Test")
         print(f"HTTP 464 = Incompatible Protocol = Need HTTP/2!")
         print("=" * 60)
         print(f"Session: {session_id}")
@@ -163,7 +163,7 @@ class CursorHTTP2Client(CursorProperProtobuf):
         # Step 1: Establish session with HTTP/1.1 (works)
         session_ok = await self.establish_session_http2(auth_token, session_id, client_key, cursor_checksum)
         if not session_ok:
-            print("❌ Session failed")
+            print("Error: Session failed")
             return None
         
         # Step 2: Send chat with HTTP/2 (THE BREAKTHROUGH!)

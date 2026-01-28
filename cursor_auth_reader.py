@@ -184,37 +184,37 @@ def main():
     reader = CursorAuthReader()
     
     if not reader.cursor_data_path:
-        print("❌ Could not find Cursor data directory")
+        print("Error: Could not find Cursor data directory")
         print("\nPossible locations:")
         print("  Linux: ~/.config/Cursor/User")
         print("  macOS: ~/Library/Application Support/Cursor/User")
         print("  Windows: %APPDATA%\\Cursor\\User")
         return
     
-    print(f"✅ Found Cursor data at: {reader.cursor_data_path}")
+    print(f"Found Cursor data at: {reader.cursor_data_path}")
     
     # Get all tokens
     tokens = reader.get_auth_tokens()
     
-    print("\n📊 Authentication Status:")
+    print("\nAuthentication Status:")
     print(f"  Email: {tokens['email'] or 'Not found'}")
-    print(f"  Access Token: {'✅ Found' if tokens['access_token'] else '❌ Not found'}")
-    print(f"  Refresh Token: {'✅ Found' if tokens['refresh_token'] else '❌ Not found'}")
+    print(f"  Access Token: {'Found' if tokens['access_token'] else 'Not found'}")
+    print(f"  Refresh Token: {'Found' if tokens['refresh_token'] else 'Not found'}")
     print(f"  Membership: {tokens['membership_type'] or 'Unknown'}")
-    print(f"  Embedded AI Key: ✅ Available (Cursor 1.3.7+)")
+    print(f"  Embedded AI Key: Available")
     
     if tokens['access_token']:
-        print(f"\n🔑 Bearer Token (first 20 chars): {tokens['access_token'][:20]}...")
-        print("\n📋 For API usage:")
+        print(f"\nBearer Token (first 20 chars): {tokens['access_token'][:20]}...")
+        print("\nFor API usage:")
         print(f"   bearer_token = '{tokens['access_token']}'")
     else:
-        print("\n❌ No access token found. Make sure you're logged into Cursor.")
+        print("\nNo access token found. Make sure you're logged into Cursor.")
     
     # Show API keys if present
-    print("\n🔌 API Keys:")
+    print("\nAPI Keys:")
     for key_name in ['openai_key', 'claude_key', 'google_key']:
         if tokens[key_name]:
-            print(f"  {key_name}: {'✅ Found' if tokens[key_name] else '❌ Not found'}")
+            print(f"  {key_name}: {'Found' if tokens[key_name] else 'Not found'}")
 
 
 if __name__ == "__main__":

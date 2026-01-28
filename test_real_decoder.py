@@ -41,14 +41,14 @@ def test_real_decoder():
         test_frame = create_real_test_frame()
         
         messages = decoder.feed_data(test_frame)
-        print(f"✅ Decoded {len(messages)} messages:")
+        print(f"Decoded {len(messages)} messages:")
         for msg in messages:
             print(f"  [{msg.msg_type.upper()}] {msg.content}")
             
         return len(messages) > 0
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -56,7 +56,7 @@ def test_real_decoder():
 if __name__ == "__main__":
     success = test_real_decoder()
     if success:
-        print("\n🎉 Decoder test PASSED!")
+        print("\nDecoder test PASSED.")
     else:
-        print("\n❌ Decoder test FAILED!")
+        print("\nDecoder test FAILED.")
         sys.exit(1)
