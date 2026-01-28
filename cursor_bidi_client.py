@@ -190,18 +190,55 @@ class CursorBidiClient:
             
             tool_call_id = tool_id_match.group(1)
             
-            # Find tool name
+            # Find tool name - comprehensive mapping from TASK-110-tool-enum-mapping.md
             tool_name = None
             name_to_enum = {
+                # Core file operations
                 'list_dir': ClientSideToolV2.LIST_DIR,
                 'read_file': ClientSideToolV2.READ_FILE,
-                'grep_search': ClientSideToolV2.RIPGREP_SEARCH,
-                'ripgrep_search': ClientSideToolV2.RIPGREP_SEARCH,
                 'edit_file': ClientSideToolV2.EDIT_FILE,
-                'run_terminal_command': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
-                'run_terminal_cmd': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
+                'delete_file': ClientSideToolV2.DELETE_FILE,
                 'file_search': ClientSideToolV2.FILE_SEARCH,
                 'glob_file_search': ClientSideToolV2.GLOB_FILE_SEARCH,
+                # Search operations
+                'grep_search': ClientSideToolV2.RIPGREP_SEARCH,
+                'ripgrep_search': ClientSideToolV2.RIPGREP_SEARCH,
+                'codebase_search': ClientSideToolV2.SEMANTIC_SEARCH_FULL,
+                'search_symbols': ClientSideToolV2.SEARCH_SYMBOLS,
+                'deep_search': ClientSideToolV2.DEEP_SEARCH,
+                # Terminal
+                'run_terminal_command': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
+                'run_terminal_cmd': ClientSideToolV2.RUN_TERMINAL_COMMAND_V2,
+                # Web/external
+                'web_search': ClientSideToolV2.WEB_SEARCH,
+                'fetch_rules': ClientSideToolV2.FETCH_RULES,
+                'fetch_pull_request': ClientSideToolV2.FETCH_PULL_REQUEST,
+                # MCP
+                'mcp': ClientSideToolV2.MCP,
+                'call_mcp_tool': ClientSideToolV2.CALL_MCP_TOOL,
+                'list_mcp_resources': ClientSideToolV2.LIST_MCP_RESOURCES,
+                'read_mcp_resource': ClientSideToolV2.READ_MCP_RESOURCE,
+                # Task/Agent
+                'task': ClientSideToolV2.TASK,
+                'await_task': ClientSideToolV2.AWAIT_TASK,
+                'todo_read': ClientSideToolV2.TODO_READ,
+                'todo_write': ClientSideToolV2.TODO_WRITE,
+                'create_plan': ClientSideToolV2.CREATE_PLAN,
+                # Misc
+                'reapply': ClientSideToolV2.REAPPLY,
+                'go_to_definition': ClientSideToolV2.GO_TO_DEFINITION,
+                'gotodef': ClientSideToolV2.GO_TO_DEFINITION,
+                'create_diagram': ClientSideToolV2.CREATE_DIAGRAM,
+                'fix_lints': ClientSideToolV2.FIX_LINTS,
+                'read_lints': ClientSideToolV2.READ_LINTS,
+                'ask_question': ClientSideToolV2.ASK_QUESTION,
+                'switch_mode': ClientSideToolV2.SWITCH_MODE,
+                'generate_image': ClientSideToolV2.GENERATE_IMAGE,
+                'computer_use': ClientSideToolV2.COMPUTER_USE,
+                # V2 versions
+                'list_dir_v2': ClientSideToolV2.LIST_DIR_V2,
+                'read_file_v2': ClientSideToolV2.READ_FILE_V2,
+                'edit_file_v2': ClientSideToolV2.EDIT_FILE_V2,
             }
             
             for name in name_to_enum:
@@ -222,10 +259,12 @@ class CursorBidiClient:
                 except:
                     pass
             
-            # For tools that need params, only return if we have them
+            # Tools that can work without params (list_dir with default path)
             tools_needing_params = {
                 'file_search', 'grep_search', 'ripgrep_search', 'read_file', 
-                'edit_file', 'run_terminal_command', 'run_terminal_cmd', 'glob_file_search'
+                'edit_file', 'run_terminal_command', 'run_terminal_cmd', 'glob_file_search',
+                'web_search', 'codebase_search', 'deep_search', 'search_symbols',
+                'delete_file', 'todo_write', 'create_plan', 'call_mcp_tool',
             }
             
             if tool_name in tools_needing_params and not params:
