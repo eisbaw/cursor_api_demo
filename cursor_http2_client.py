@@ -23,6 +23,9 @@ class CursorHTTP2Client(CursorProperProtobuf):
         """Call AvailableModels - this works with HTTP/1.1"""
         print("🔧 Establishing session (HTTP/1.1)...")
         
+        import platform
+        import sys
+        
         url = f"{self.base_url}/aiserver.v1.AiService/AvailableModels"
         headers = {
             'accept-encoding': 'gzip',
@@ -33,9 +36,12 @@ class CursorHTTP2Client(CursorProperProtobuf):
             'x-amzn-trace-id': f'Root={uuid.uuid4()}',
             'x-client-key': client_key,
             'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '1.1.3',
-            'x-cursor-config-version': str(uuid.uuid4()),
-            'x-cursor-timezone': 'Asia/Shanghai',
+            'x-cursor-client-version': '2.3.41',  # Must match product.json version
+            'x-cursor-client-type': 'ide',
+            'x-cursor-client-os': sys.platform,
+            'x-cursor-client-arch': platform.machine(),
+            'x-cursor-client-device-type': 'desktop',
+            'x-cursor-timezone': 'Europe/Copenhagen',
             'x-ghost-mode': 'true',
             'x-request-id': str(uuid.uuid4()),
             'x-session-id': session_id,
@@ -52,6 +58,9 @@ class CursorHTTP2Client(CursorProperProtobuf):
         """Send chat using HTTP/2 - THE KEY DIFFERENCE!"""
         print(f"🚀 Sending to {model} with HTTP/2...")
         
+        import platform
+        import sys
+        
         cursor_body = self.generate_cursor_body_exact(messages, model)
         print(f"Body size: {len(cursor_body)} bytes")
         
@@ -65,9 +74,12 @@ class CursorHTTP2Client(CursorProperProtobuf):
             'x-amzn-trace-id': f'Root={uuid.uuid4()}',
             'x-client-key': client_key,
             'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '1.1.3',
-            'x-cursor-config-version': str(uuid.uuid4()),
-            'x-cursor-timezone': 'Asia/Shanghai',
+            'x-cursor-client-version': '2.3.41',  # Must match product.json version
+            'x-cursor-client-type': 'ide',
+            'x-cursor-client-os': sys.platform,
+            'x-cursor-client-arch': platform.machine(),
+            'x-cursor-client-device-type': 'desktop',
+            'x-cursor-timezone': 'Europe/Copenhagen',
             'x-ghost-mode': 'true',
             'x-request-id': str(uuid.uuid4()),
             'x-session-id': session_id,

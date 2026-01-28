@@ -31,10 +31,33 @@ class CursorProperProtobuf:
         """Generate sessionid using UUID v5 with DNS namespace like JS"""
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, auth_token))
     
+    def get_machine_id(self):
+        """Get machine ID from Cursor storage"""
+        import sqlite3
+        db_path = self.auth_reader.storage_path
+        if not db_path:
+            return None
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM ItemTable WHERE key = 'storage.serviceMachineId'")
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                val = row[0]
+                if isinstance(val, bytes):
+                    val = val.decode('utf-8')
+                return val
+        except:
+            pass
+        return None
+    
     def generate_cursor_checksum(self, token):
         """Generate checksum like JS generateCursorChecksum"""
-        machine_id = self.generate_hashed_64_hex(token, 'machineId')
-        mac_machine_id = self.generate_hashed_64_hex(token, 'macMachineId')
+        # Use real machine ID from storage
+        machine_id = self.get_machine_id()
+        if not machine_id:
+            machine_id = self.generate_hashed_64_hex(token, 'machineId')
         
         timestamp = int(time.time() * 1000 // 1000000)  # Math.floor(Date.now() / 1e6)
         
@@ -48,14 +71,27 @@ class CursorProperProtobuf:
             timestamp & 255,
         ])
         
-        # Obfuscate like JS
+        # Obfuscate like JS (Jyh cipher)
         t = 165
         for i in range(len(byte_array)):
             byte_array[i] = ((byte_array[i] ^ t) + (i % 256)) & 255
             t = byte_array[i]
         
-        encoded = base64.b64encode(byte_array).decode()
-        return f"{encoded}{machine_id}/{mac_machine_id}"
+        # URL-safe base64 without padding
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        encoded = ""
+        for i in range(0, len(byte_array), 3):
+            a = byte_array[i]
+            b = byte_array[i + 1] if i + 1 < len(byte_array) else 0
+            c = byte_array[i + 2] if i + 2 < len(byte_array) else 0
+            encoded += alphabet[a >> 2]
+            encoded += alphabet[((a & 3) << 4) | (b >> 4)]
+            if i + 1 < len(byte_array):
+                encoded += alphabet[((b & 15) << 2) | (c >> 6)]
+            if i + 2 < len(byte_array):
+                encoded += alphabet[c & 63]
+        
+        return f"{encoded}{machine_id}"
     
     def encode_message(self, content, role, message_id, chat_mode_enum=None):
         """Encode Message using exact schema"""
