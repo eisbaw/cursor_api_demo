@@ -2,7 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 Cursor Chat protobuf implementation based on provided schema
-See TASK-26-tool-schemas.md for message definitions
+
+Related analysis documents:
+- TASK-26-tool-schemas.md: Tool parameter and result schemas
+- TASK-7-protobuf-schemas.md: General protobuf message structures
+- TASK-110-tool-enum-mapping.md: ClientSideToolV2 enum values
+- TASK-126-toolv2-params.md: Detailed tool parameter field numbers
+
+Wire format reference:
+- Wire type 0: Varint (int32, int64, uint32, uint64, sint32, sint64, bool, enum)
+- Wire type 1: 64-bit (fixed64, sfixed64, double)
+- Wire type 2: Length-delimited (string, bytes, embedded messages, packed repeated fields)
+- Wire type 5: 32-bit (fixed32, sfixed32, float)
 """
 
 import struct
@@ -11,7 +22,11 @@ from typing import Dict, List, Tuple, Any, Optional
 
 
 class ProtobufDecoder:
-    """Decode protobuf wire format messages"""
+    """Decode protobuf wire format messages
+    
+    Used to parse streaming responses from Cursor API.
+    See TASK-7-protobuf-schemas.md for schema documentation.
+    """
     
     @staticmethod
     def decode_varint(data: bytes, pos: int) -> Tuple[int, int]:

@@ -7,6 +7,13 @@ True HTTP/2 bidirectional streaming implementation for Cursor's agent API.
 This allows sending tool results back on the same stream.
 
 Based on reverse engineering analysis of Cursor IDE 2.3.41.
+
+Related analysis documents:
+- TASK-26-tool-schemas.md: ClientSideToolV2Call/Result protobuf schemas
+- TASK-43-sse-poll-fallback.md: HTTP/2, SSE, and polling mechanisms
+- TASK-110-tool-enum-mapping.md: Tool enum definitions and mappings
+- TASK-6-auth-headers.md: Authentication headers (x-cursor-checksum, etc.)
+- TASK-18-jyh-cipher.md: Checksum generation algorithm
 """
 
 import asyncio
@@ -49,11 +56,21 @@ class StreamState:
 
 
 class CursorBidiClient:
-    """HTTP/2 bidirectional streaming client for Cursor API"""
+    """HTTP/2 bidirectional streaming client for Cursor API
+    
+    Implements true bidirectional streaming for agent mode, allowing tool results
+    to be sent back on the same HTTP/2 stream.
+    
+    Protocol: ConnectRPC over HTTP/2
+    - Endpoint: /aiserver.v1.ChatService/StreamUnifiedChatWithTools
+    - See TASK-43-sse-poll-fallback.md for protocol details
+    - See TASK-26-tool-schemas.md for message schemas
+    """
     
     BASE_URL = "api2.cursor.sh"
     PORT = 443
     
+    # Tools enabled by default - see TASK-110-tool-enum-mapping.md for full list
     DEFAULT_TOOLS = [
         ClientSideToolV2.READ_FILE,
         ClientSideToolV2.LIST_DIR,
