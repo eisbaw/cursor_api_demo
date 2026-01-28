@@ -640,9 +640,19 @@ class CursorAgentClient:
                 msg += ProtobufEncoder.encode_field(12, 0, data['total_lines'])
                 
         elif tool == ClientSideToolV2.LIST_DIR:
-            # ListDirResult - encode entries
-            entries_str = json.dumps(data.get('entries', []))
-            msg += ProtobufEncoder.encode_field(1, 2, entries_str)
+            # ListDirResult: repeated File files = 1; string directory_relative_workspace_path = 2;
+            entries = data.get('entries', [])
+            for entry in entries:
+                # File message: name=1(string), is_directory=2(bool), size=3(int64)
+                file_msg = b''
+                file_msg += ProtobufEncoder.encode_field(1, 2, entry.get('name', ''))
+                file_msg += ProtobufEncoder.encode_field(2, 0, 1 if entry.get('is_directory') else 0)
+                if entry.get('size'):
+                    file_msg += ProtobufEncoder.encode_field(3, 0, entry['size'])
+                msg += ProtobufEncoder.encode_field(1, 2, file_msg)
+            # directory_relative_workspace_path = 2
+            if 'directory_path' in data:
+                msg += ProtobufEncoder.encode_field(2, 2, data['directory_path'])
             
         elif tool == ClientSideToolV2.RIPGREP_SEARCH:
             # RipgrepSearchResult - encode matches
