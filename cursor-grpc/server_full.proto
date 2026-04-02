@@ -1,0 +1,1216 @@
+syntax = "proto3";
+
+package aiserver.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+
+// --- Common/Shared Message Definitions (Inferred & Added) ---
+
+enum LintSeverity {
+  LINT_SEVERITY_UNSPECIFIED = 0;
+  LINT_SEVERITY_ERROR = 1;
+  LINT_SEVERITY_WARNING = 2;
+  LINT_SEVERITY_INFO = 3;
+  LINT_SEVERITY_HINT = 4;
+  LINT_SEVERITY_AI = 5;
+}
+
+enum EmbeddingModel {
+    EMBEDDING_MODEL_UNSPECIFIED = 0;
+    EMBEDDING_MODEL_VOYAGE_CODE_2 = 1;
+    EMBEDDING_MODEL_TEXT_EMBEDDINGS_LARGE_3 = 2;
+    EMBEDDING_MODEL_QWEN_1_5B_CUSTOM = 3;
+}
+
+enum ClientSideToolV2 {
+  CLIENT_SIDE_TOOL_V2_UNSPECIFIED = 0;
+  CLIENT_SIDE_TOOL_V2_READ_SEMSEARCH_FILES = 1;
+  CLIENT_SIDE_TOOL_V2_READ_FILE_FOR_IMPORTS = 2;
+  CLIENT_SIDE_TOOL_V2_RIPGREP_SEARCH = 3;
+  CLIENT_SIDE_TOOL_V2_RUN_TERMINAL_COMMAND = 4;
+  CLIENT_SIDE_TOOL_V2_READ_FILE = 5;
+  CLIENT_SIDE_TOOL_V2_LIST_DIR = 6;
+  CLIENT_SIDE_TOOL_V2_EDIT_FILE = 7;
+  CLIENT_SIDE_TOOL_V2_FILE_SEARCH = 8;
+  CLIENT_SIDE_TOOL_V2_SEMANTIC_SEARCH_FULL = 9;
+  CLIENT_SIDE_TOOL_V2_CREATE_FILE = 10;
+  CLIENT_SIDE_TOOL_V2_DELETE_FILE = 11;
+  CLIENT_SIDE_TOOL_V2_REAPPLY = 12;
+  CLIENT_SIDE_TOOL_V2_GET_RELATED_FILES = 13;
+  CLIENT_SIDE_TOOL_V2_PARALLEL_APPLY = 14;
+  CLIENT_SIDE_TOOL_V2_RUN_TERMINAL_COMMAND_V2 = 15;
+  CLIENT_SIDE_TOOL_V2_FETCH_RULES = 16;
+  CLIENT_SIDE_TOOL_V2_PLANNER = 17;
+  CLIENT_SIDE_TOOL_V2_WEB_SEARCH = 18;
+  CLIENT_SIDE_TOOL_V2_MCP = 19;
+  CLIENT_SIDE_TOOL_V2_WEB_VIEWER = 20;
+  CLIENT_SIDE_TOOL_V2_DIFF_HISTORY = 21;
+  CLIENT_SIDE_TOOL_V2_IMPLEMENTER = 22;
+  CLIENT_SIDE_TOOL_V2_SEARCH_SYMBOLS = 23;
+  CLIENT_SIDE_TOOL_V2_BACKGROUND_COMPOSER_FOLLOWUP = 24;
+}
+
+enum ChunkType {
+    CHUNK_TYPE_UNSPECIFIED = 0;
+    CHUNK_TYPE_CODEBASE = 1;
+    CHUNK_TYPE_LONG_FILE = 2;
+    CHUNK_TYPE_DOCS = 3;
+}
+
+enum FeatureType {
+  FEATURE_TYPE_UNSPECIFIED = 0;
+  FEATURE_TYPE_EDIT = 1;
+  FEATURE_TYPE_GENERATE = 2;
+  FEATURE_TYPE_INLINE_LONG_COMPLETION = 3;
+}
+
+// --- Common/Shared Message Definitions ---
+
+message Location {
+   string uri = 1;
+   SimpleRange range = 2;
+}
+
+message RelatedInformation {
+  Location location = 1;
+  string message = 2;
+}
+
+message File {
+  string relative_workspace_path = 1;
+  string contents = 2;
+  optional int32 version = 3;
+  optional string sha_256_hash = 4;
+}
+
+message SimplestRange {
+  int32 start_line = 1;
+  int32 end_line_inclusive = 2;
+}
+
+message ChatExternalLink {
+    string url = 1;
+    string uuid = 2;
+    optional string title = 3;
+}
+
+message DiffFile {
+    string file_details = 1;
+    string file_name = 2;
+}
+
+message ViewableCommitProps {
+    string description = 1;
+    string message = 2;
+    repeated DiffFile files = 3;
+}
+
+message ViewablePRProps {
+    string title = 1;
+    string body = 2;
+    repeated DiffFile files = 3;
+}
+
+message ViewableDiffProps {
+    repeated DiffFile files = 1;
+    string diff_preface = 2;
+}
+
+message ViewableGitContext {
+    optional ViewableCommitProps commit_data = 1;
+    optional ViewablePRProps pull_request_data = 2;
+    repeated ViewableDiffProps diff_data = 3;
+}
+
+message GitDiffFileDiffChunk { // Renamed from FileDiff.Chunk to avoid name clash
+    string content = 1;
+    repeated string lines = 2;
+    int32 old_start = 3;
+    int32 old_lines = 4;
+    int32 new_start = 5;
+    int32 new_lines = 6;
+}
+
+message GitFileDiff { // Renamed from FileDiff to avoid name clash
+  string from = 1;
+  string to = 2;
+  repeated GitDiffFileDiffChunk chunks = 3;
+}
+
+message GitDiff {
+  repeated GitFileDiff diffs = 1; // Use renamed message
+  DiffType diff_type = 2;
+
+  enum DiffType {
+    DIFF_TYPE_UNSPECIFIED = 0;
+    DIFF_TYPE_DIFF_TO_HEAD = 1;
+    DIFF_TYPE_DIFF_FROM_BRANCH_TO_MAIN = 2;
+  }
+}
+
+message CurrentFolderFileOrFolder {
+    string name = 1;
+    bool is_folder = 2;
+}
+
+message AzureState {
+    string api_key = 1;
+    string base_url = 2;
+    string deployment = 3;
+    bool use_azure = 4;
+}
+
+message BedrockState {
+  string access_key = 1;
+  string secret_key = 2;
+  string region = 3;
+  bool use_bedrock = 4;
+  optional string session_token = 5;
+}
+
+message ModelDetails {
+  optional string model_name = 1;
+  optional string api_key = 2;
+  optional bool enable_ghost_mode = 3;
+  optional AzureState azure_state = 4;
+  optional bool enable_slow_pool = 5;
+  optional string openai_api_base_url = 6;
+  optional BedrockState bedrock_state = 7;
+}
+
+message CursorPosition {
+  int32 line = 1;
+  int32 column = 2;
+}
+
+message SimpleRange {
+  int32 start_line_number = 1;
+  int32 start_column = 2;
+  int32 end_line_number_inclusive = 3;
+  int32 end_column = 4;
+}
+
+message LineRange {
+  int32 start_line_number = 1;
+  int32 end_line_number_inclusive = 2;
+}
+
+message CursorRange {
+  CursorPosition start_position = 1;
+  CursorPosition end_position = 2;
+}
+
+message NotebookCell {
+    int32 index = 1;
+    string content = 2;
+    string language_id = 3;
+    string output = 4; // Guessed field
+}
+
+message CurrentFileInfo {
+  string relative_workspace_path = 1;
+  string contents = 2;
+  bool rely_on_filesync = 18;
+  optional string sha_256_hash = 17;
+  repeated NotebookCell cells = 16;
+  repeated BM25Chunk top_chunks = 10;
+  int32 contents_start_at_line = 9;
+  CursorPosition cursor_position = 3;
+  repeated DataframeInfo dataframes = 4;
+  int32 total_number_of_lines = 8;
+  string language_id = 5;
+  CursorRange selection = 6;
+  optional int32 alternative_version_id = 11;
+  repeated LinterError diagnostics = 7;
+  optional int32 file_version = 14;
+  repeated int32 cell_start_lines = 15 [packed=true];
+  string workspace_root_path = 19;
+}
+
+message BM25Chunk {
+ string content = 1;
+ LineRange range = 2;
+ int32 score = 3;
+ string relative_path = 4;
+}
+
+message DataframeColumn { // Moved from DataframeInfo
+  string key = 1;
+  string type = 2;
+}
+
+message DataframeInfo {
+  string name = 1;
+  string shape = 2;
+  int32 data_dimensionality = 3;
+  repeated DataframeColumn columns = 6; // Use renamed message
+  int32 row_count = 7;
+  string index_column = 8;
+}
+
+
+message LinterErrors {
+  string relative_workspace_path = 1;
+  repeated LinterError errors = 2;
+  string file_contents = 3;
+}
+
+message LinterErrorsWithoutFileContents {
+    string relative_workspace_path = 1;
+    repeated LinterError errors = 2;
+}
+
+message CodeBlockSignatures {
+    repeated CursorRange ranges = 1;
+}
+
+message CodeBlock {
+  string relative_workspace_path = 1;
+  optional string file_contents = 2;
+  optional int32 file_contents_length = 9;
+  CursorRange range = 3;
+  string contents = 4;
+  CodeBlockSignatures signatures = 5;
+  optional string override_contents = 6;
+  optional string original_contents = 7;
+  repeated DetailedLine detailed_lines = 8;
+}
+
+message DetailedLine {
+    string text = 1;
+    double line_number = 2;
+    bool is_signature = 3;
+}
+
+message RepositoryInfo {
+  string relative_workspace_path = 1;
+  repeated string remote_urls = 2;
+  repeated string remote_names = 3;
+  string repo_name = 4;
+  string repo_owner = 5;
+  bool is_tracked = 6;
+  bool is_local = 7;
+  optional int32 num_files = 8;
+  optional double orthogonal_transform_seed = 9;
+  optional EmbeddingModel preferred_embedding_model = 10;
+  string workspace_uri = 11;
+}
+
+message ExplicitContext {
+  string context = 1;
+  optional string repo_context = 2;
+  repeated CursorRule rules = 3;
+  optional string mode_specific_context = 4;
+}
+
+message CursorRule {
+  string name = 1;
+  string description = 2;
+  optional string body = 3;
+  optional bool is_from_glob = 4;
+  optional bool always_apply = 5;
+}
+
+message ImageProto {
+    bytes data = 1;
+    Dimension dimension = 2;
+
+    message Dimension {
+        int32 width = 1;
+        int32 height = 2;
+    }
+}
+
+message ChatQuote {
+    string markdown = 1;
+    string bubble_id = 2;
+    int32 section_index = 3;
+}
+
+message ComposerExternalLink {
+    string url = 1;
+    string uuid = 2;
+}
+
+message CommitNote {
+    string note = 1;
+    string commit_hash = 2;
+}
+
+message CmdKUnsavedFiles {
+    string relative_workspace_path = 1;
+    string contents = 2;
+}
+
+message CmdKOpenEditor {
+    string relative_workspace_path = 1;
+    int32 editor_group_index = 2;
+    int32 editor_group_id = 3;
+    bool is_active = 4;
+}
+
+message CmdKCppFileDiffHistory {
+    string file_name = 1;
+    repeated string diff_history = 2;
+}
+
+message CmdKPastThought {
+    string text = 1;
+    double time_in_unix_seconds = 2;
+}
+
+message CmdKDebugInfo {
+    string remote_url = 1;
+    string commit_id = 2;
+    string git_patch = 3;
+    repeated CmdKUnsavedFiles unsaved_files = 4;
+    double unix_timestamp_ms = 5;
+    repeated CmdKOpenEditor open_editors = 6;
+    repeated CmdKCppFileDiffHistory file_diff_histories = 7;
+    string branch_name = 8;
+    string branch_notes = 9;
+    string branch_notes_rich = 12;
+    string global_notes = 10;
+    repeated CmdKPastThought past_thoughts = 11;
+    string base_branch_name = 13;
+    string base_branch_commit_id = 14;
+}
+
+message CppFileDiffHistory {
+    string file_name = 1;
+    repeated string diff_history = 2;
+    repeated double diff_history_timestamps = 3 [packed=true]; // Assuming double, packed for efficiency
+}
+
+message ComposerFileDiffHistory {
+    string file_name = 1;
+    repeated string diff_history = 2;
+    repeated double diff_history_timestamps = 3 [packed=true];
+}
+
+message ConversationCodeChunk {
+    string relative_workspace_path = 1;
+    int32 start_line_number = 2;
+    repeated string lines = 3;
+    SummarizationStrategy summarization_strategy = 4; // opt
+    string language_identifier = 5;
+    Intent intent = 6; // opt
+    bool is_final_version = 7; // opt
+    bool is_first_version = 8; // opt
+    bool contents_are_missing = 9; // opt
+
+    enum Intent {
+        INTENT_UNSPECIFIED = 0;
+        INTENT_COMPOSER_FILE = 1;
+        INTENT_COMPRESSED_COMPOSER_FILE = 2;
+        INTENT_RECENTLY_VIEWED_FILE = 3;
+        INTENT_OUTLINE = 4;
+        INTENT_MENTIONED_FILE = 5;
+        INTENT_CODE_SELECTION = 6;
+    }
+    enum SummarizationStrategy {
+        SUMMARIZATION_STRATEGY_NONE_UNSPECIFIED = 0;
+        SUMMARIZATION_STRATEGY_SUMMARIZED = 1;
+        SUMMARIZATION_STRATEGY_EMBEDDED = 2;
+    }
+}
+
+message ClientSideToolV2Result {
+    ClientSideToolV2 tool = 1;
+    oneof result {
+        ReadSemsearchFilesResult read_semsearch_files_result = 2;
+        ReadFileForImportsResult read_file_for_imports_result = 3;
+        RipgrepSearchResult ripgrep_search_result = 4;
+        RunTerminalCommandResult run_terminal_command_result = 5;
+        ReadFileResult read_file_result = 6;
+        ListDirResult list_dir_result = 9;
+        EditFileResult edit_file_result = 10;
+        ToolCallFileSearchResult file_search_result = 11;
+        SemanticSearchFullResult semantic_search_full_result = 18;
+        CreateFileResult create_file_result = 19;
+        DeleteFileResult delete_file_result = 20;
+        ReapplyResult reapply_result = 21;
+        GetRelatedFilesResult get_related_files_result = 22;
+        ParallelApplyResult parallel_apply_result = 23;
+        RunTerminalCommandV2Result run_terminal_command_v2_result = 24;
+        FetchRulesResult fetch_rules_result = 25;
+        PlannerResult planner_result = 26;
+        WebSearchResult web_search_result = 27;
+        MCPResult mcp_result = 28;
+        WebViewerResult web_viewer_result = 29;
+        DiffHistoryResult diff_history_result = 30;
+        ImplementerResult implementer_result = 31;
+        SearchSymbolsResult search_symbols_result = 32;
+        BackgroundComposerFollowupResult background_composer_followup_result = 33;
+    }
+    optional ToolResultError error = 8;
+}
+
+message ToolResultError {
+    string client_visible_error_message = 1;
+    string model_visible_error_message = 2;
+    optional string actual_error_message_only_send_from_client_to_server_never_the_other_way_around_because_that_may_be_a_security_risk = 3;
+}
+
+message ConversationToolResult {
+    string tool_call_id = 1;
+    string tool_name = 2;
+    uint32 tool_index = 3;
+    string args = 4;
+    string raw_args = 5;
+    repeated ConversationCodeChunk attached_code_chunks = 6;
+    optional string content = 7;
+    ClientSideToolV2Result result = 8;
+    optional ToolResultError error = 9;
+    repeated ImageProto images = 10;
+}
+
+message ConversationMultiRangeCodeChunkRangeWithPriority { // Moved from nested
+  SimplestRange range = 1;
+  double priority = 2;
+}
+
+message ConversationMultiRangeCodeChunk {
+    repeated ConversationMultiRangeCodeChunkRangeWithPriority ranges = 1;
+    string content = 2;
+    string relative_workspace_path = 3;
+}
+
+message ConversationNotepadContext {
+    string name = 1;
+    string text = 2;
+    repeated ConversationCodeChunk attached_code_chunks = 3;
+    repeated string attached_folders = 4;
+    repeated Commit commits = 5;
+    repeated PullRequest pull_requests = 6;
+    repeated GitDiff git_diffs = 7;
+    repeated ImageProto images = 8;
+}
+
+message ConversationComposerContext {
+    string name = 1;
+    ConversationSummary conversation_summary = 2;
+}
+
+message ConversationEditLocation {
+    string relative_workspace_path = 1;
+    SimplestRange range = 3;
+    SimplestRange initial_range = 4;
+    string context_lines = 5;
+    string text = 6;
+    SimplestRange text_range = 7;
+}
+
+message ConversationEditTrailContext {
+    string unique_id = 1;
+    repeated ConversationEditLocation edit_trail_sorted = 2;
+}
+
+message ConversationApproximateLintError {
+    string message = 1;
+    string value = 2;
+    int32 start_line = 3;
+    int32 end_line = 4;
+    int32 start_column = 5;
+    int32 end_column = 6;
+}
+
+message ConversationLintsLine { // Moved from nested
+    string line = 1;
+    int32 line_number = 2;
+}
+
+message ConversationLints {
+    GetLintsForChangeResponse lints = 1;
+    string chat_codeblock_model_value = 2;
+}
+
+message ConversationRecentLocation {
+    string relative_workspace_path = 1;
+    int32 line_number = 2;
+}
+
+message ConversationRenderedDiff {
+    int32 start_line_number = 1;
+    int32 end_line_number_exclusive = 2;
+    repeated string before_context_lines = 3;
+    repeated string removed_lines = 4;
+    repeated string added_lines = 5;
+    repeated string after_context_lines = 6;
+}
+
+message ConversationHumanChange {
+    string relative_workspace_path = 1;
+    repeated ConversationRenderedDiff rendered_diffs = 2;
+}
+
+message ConversationThinking {
+    string text = 1;
+    string signature = 2;
+    string redacted_thinking = 3;
+    bool is_last_thinking_chunk = 4;
+}
+
+message EditFileResultFileDiffChunkDiff { // Moved from nested
+    string diff_string = 1;
+    int32 old_start = 2;
+    int32 new_start = 3;
+    int32 old_lines = 4;
+    int32 new_lines = 5;
+    int32 lines_removed = 6;
+    int32 lines_added = 7;
+}
+
+enum EditFileResultFileDiffEditor { // Moved from nested
+    EDITOR_UNSPECIFIED = 0;
+    EDITOR_AI = 1;
+    EDITOR_HUMAN = 2;
+}
+
+message EditFileResultFileDiff { // Moved from nested
+    repeated EditFileResultFileDiffChunkDiff chunks = 1;
+    EditFileResultFileDiffEditor editor = 2;
+    bool hit_timeout = 3;
+}
+
+
+message ConversationDiffSinceLastApply {
+    string relative_workspace_path = 1;
+    optional EditFileResultFileDiff diff = 2; // Use renamed message
+    optional bool is_accepted = 4;
+    optional bool is_rejected = 5;
+    optional int32 last_apply_chained_from_n_human_messages_ago = 6;
+}
+
+message ConversationDeletedFile {
+    string relative_workspace_path = 1;
+}
+
+// --- StreamUnifiedChatRequest related enums and messages ---
+enum StreamUnifiedChatRequestUnifiedMode {
+  UNIFIED_MODE_UNSPECIFIED = 0;
+  UNIFIED_MODE_CHAT = 1;
+  UNIFIED_MODE_AGENT = 2;
+  UNIFIED_MODE_EDIT = 3;
+  UNIFIED_MODE_CUSTOM = 4;
+}
+
+enum StreamUnifiedChatRequestThinkingLevel {
+  THINKING_LEVEL_UNSPECIFIED = 0;
+  THINKING_LEVEL_MEDIUM = 1;
+  THINKING_LEVEL_HIGH = 2;
+}
+
+message StreamUnifiedChatRequestRedDiff {
+    string relative_workspace_path = 1;
+    repeated SimplestRange red_ranges = 2;
+    repeated SimplestRange red_ranges_reversed = 3;
+    string start_hash = 4;
+    string end_hash = 5;
+}
+
+message StreamUnifiedChatRequestRecentEditsCodeBlockInfo {
+    string relative_workspace_path = 1;
+    optional string content_before = 2;
+    optional string content_after = 3;
+    optional string generation_uuid = 4;
+    optional int32 version = 5;
+}
+
+message StreamUnifiedChatRequestRecentEditsFileInfo {
+    string relative_workspace_path = 1;
+    string content = 2;
+}
+
+message StreamUnifiedChatRequestRecentEdits {
+  repeated StreamUnifiedChatRequestRecentEditsCodeBlockInfo code_block_info = 1;
+  repeated StreamUnifiedChatRequestRecentEditsFileInfo final_file_values = 2;
+  optional string edits_belong_to_composer_generation_uuid = 3;
+}
+
+message StreamUnifiedChatRequestCodeSearchResult {
+    repeated CodeResult results = 1;
+    repeated File all_files = 2;
+}
+
+// --- StreamUnifiedChatResponse related messages ---
+
+message StreamUnifiedChatResponseChunkIdentity {
+    string file_name = 1;
+    int32 start_line = 2;
+    int32 end_line = 3;
+    string text = 4;
+    ChunkType chunk_type = 5;
+}
+
+message StreamUnifiedChatResponseUsedCode {
+    repeated CodeResult code_results = 1;
+}
+
+message StreamUnifiedChatResponseFinalToolResult {
+  string tool_call_id = 1;
+  ClientSideToolV2Result result = 2;
+}
+
+message ConversationSummaryStarter {
+    string message = 1;
+}
+
+message DocumentSymbol {
+    string name = 1;
+    string detail = 2;
+    SymbolKind kind = 3;
+    string container_name = 5;
+    Range range = 6; // Using placeholder Range
+    Range selection_range = 7; // Using placeholder Range
+    repeated DocumentSymbol children = 8;
+
+    enum SymbolKind {
+        SYMBOL_KIND_UNSPECIFIED = 0;
+        SYMBOL_KIND_FILE = 1;
+        SYMBOL_KIND_MODULE = 2;
+        SYMBOL_KIND_NAMESPACE = 3;
+        SYMBOL_KIND_PACKAGE = 4;
+        SYMBOL_KIND_CLASS = 5;
+        SYMBOL_KIND_METHOD = 6;
+        SYMBOL_KIND_PROPERTY = 7;
+        SYMBOL_KIND_FIELD = 8;
+        SYMBOL_KIND_CONSTRUCTOR = 9;
+        SYMBOL_KIND_ENUM = 10;
+        SYMBOL_KIND_INTERFACE = 11;
+        SYMBOL_KIND_FUNCTION = 12;
+        SYMBOL_KIND_VARIABLE = 13;
+        SYMBOL_KIND_CONSTANT = 14;
+        SYMBOL_KIND_STRING = 15;
+        SYMBOL_KIND_NUMBER = 16;
+        SYMBOL_KIND_BOOLEAN = 17;
+        SYMBOL_KIND_ARRAY = 18;
+        SYMBOL_KIND_OBJECT = 19;
+        SYMBOL_KIND_KEY = 20;
+        SYMBOL_KIND_NULL = 21;
+        SYMBOL_KIND_ENUM_MEMBER = 22;
+        SYMBOL_KIND_STRUCT = 23;
+        SYMBOL_KIND_EVENT = 24;
+        SYMBOL_KIND_OPERATOR = 25;
+        SYMBOL_KIND_TYPE_PARAMETER = 26;
+    }
+
+    message Range { // Placeholder definition
+        int32 start_line = 1;
+        int32 start_char = 2;
+        int32 end_line = 3;
+        int32 end_char = 4;
+    }
+}
+
+message DocumentSymbolWithText {
+    DocumentSymbol symbol = 1;
+    string relative_workspace_path = 2;
+    string text_in_symbol_range = 3;
+    UriComponents uri_components = 4;
+}
+
+message UriComponents { // Assuming standard URI components
+    string scheme = 1;
+    optional string authority = 2;
+    optional string path = 3;
+    optional string query = 4;
+    optional string fragment = 5;
+}
+
+message HoverDetails {
+    string code_details = 1;
+    repeated string markdown_blocks = 2;
+}
+
+
+
+message StreamedBackPartialToolCall { // Keep this original definition
+    ClientSideToolV2 tool = 1;
+    string tool_call_id = 2;
+    string name = 3;
+}
+
+message SymbolLink {
+    string symbol_name = 1;
+    string symbol_search_string = 2;
+    string relative_workspace_path = 3;
+    int32 rough_line_number = 4;
+}
+
+message FileLink {
+    string display_name = 1;
+    string relative_workspace_path = 2;
+}
+
+message ContextPieceUpdate {
+    repeated ContextPiece pieces = 1;
+}
+
+message ContextPiece {
+    string relative_workspace_path = 1;
+    string content = 2;
+    double score = 3;
+}
+
+
+message ServiceStatusUpdate {
+    string message = 1;
+    string codicon = 2;
+    optional bool allow_command_links_potentially_unsafe_please_only_use_for_handwritten_trusted_markdown = 3;
+    optional string action_to_run_on_status_update = 4;
+}
+
+message DocsReference {
+    string title = 1;
+    string url = 2;
+    string chunk = 3;
+    string name = 4;
+}
+
+message WebReference {
+    string title = 1;
+    string url = 2;
+    string chunk = 3;
+}
+
+message WebCitation {
+    repeated WebReference references = 1;
+}
+
+message StatusUpdate {
+    string message = 1;
+    optional string metadata = 2;
+}
+
+message StatusUpdates {
+    repeated StatusUpdate updates = 1;
+}
+
+message DocumentationCitation {
+    repeated DocumentationChunk chunks = 1; // Uses original DocumentationChunk definition
+}
+
+// --- Full Message Definitions ---
+
+message ConversationMessage {
+  string text = 1;
+  MessageType type = 2;
+  repeated ConversationCodeChunk attached_code_chunks = 3;
+  repeated CodeBlock codebase_context_chunks = 4;
+  repeated Commit commits = 5;
+  repeated PullRequest pull_requests = 6;
+  repeated GitDiff git_diffs = 7;
+  repeated SimpleFileDiff assistant_suggested_diffs = 8;
+  repeated InterpreterResult interpreter_results = 9;
+  repeated ImageProto images = 10;
+  repeated string attached_folders = 11; // Deprecated?
+  repeated ConversationApproximateLintError approximate_lint_errors = 12;
+  string bubble_id = 13;
+  optional string server_bubble_id = 32;
+  repeated FolderInfo attached_folders_new = 14;
+  repeated ConversationLints lints = 15;
+  repeated UserResponseToSuggestedCodeBlock user_responses_to_suggested_code_blocks = 16;
+  repeated string relevant_files = 17;
+  repeated ConversationToolResult tool_results = 18;
+  repeated ConversationNotepadContext notepads = 19;
+  optional bool is_capability_iteration = 20;
+  repeated ComposerCapabilityRequest capabilities = 21;
+  repeated ConversationEditTrailContext edit_trail_contexts = 22;
+  repeated SuggestedCodeBlock suggested_code_blocks = 23;
+  repeated StreamUnifiedChatRequestRedDiff diffs_for_compressing_files = 24;
+  repeated LinterErrorsWithoutFileContents multi_file_linter_errors = 25;
+  repeated ComposerFileDiffHistory diff_histories = 26;
+  repeated ConversationCodeChunk recently_viewed_files = 27;
+  repeated ConversationRecentLocation recent_locations_history = 28;
+  bool is_agentic = 29;
+  repeated CppFileDiffHistory file_diff_trajectories = 30;
+  optional ConversationSummary conversation_summary = 31;
+  bool existed_subsequent_terminal_command = 33;
+  bool existed_previous_terminal_command = 34;
+  repeated DocsReference docs_references = 35;
+  repeated WebReference web_references = 36;
+  optional ViewableGitContext git_context = 37;
+  repeated ListDirResult attached_folders_list_dir_results = 38;
+  optional ConversationSummary cached_conversation_summary = 39;
+  repeated ConversationHumanChange human_changes = 40;
+  bool attached_human_changes = 41;
+  repeated SummarizedComposer summarized_composers = 42;
+  repeated CursorRule cursor_rules = 43;
+  repeated ContextPiece context_pieces = 44;
+  optional ConversationThinking thinking = 45;
+  repeated ConversationThinking all_thinking_blocks = 46;
+  optional StreamUnifiedChatRequestUnifiedMode unified_mode = 47;
+  repeated ConversationDiffSinceLastApply diffs_since_last_apply = 48;
+  repeated ConversationDeletedFile deleted_files = 49;
+  optional string usage_uuid = 50;
+  repeated ClientSideToolV2 supported_tools = 51;
+  optional CurrentFileLocationData current_file_location_data = 52;
+  optional bool edit_tool_supports_search_and_replace = 53;
+  optional string last_terminal_cwd = 54;
+  optional bool user_explicitly_asked_to_generate_cursor_rules = 55;
+  repeated ProjectLayout project_layouts = 58;
+
+  enum MessageType {
+    MESSAGE_TYPE_UNSPECIFIED = 0;
+    MESSAGE_TYPE_HUMAN = 1;
+    MESSAGE_TYPE_AI = 2;
+  }
+}
+
+message StreamUnifiedChatRequest {
+  optional CurrentFileInfo current_file = 1;
+  repeated ConversationMessage conversation = 2;
+  repeated RepositoryInfo repositories = 3;
+  optional ExplicitContext explicit_context = 4;
+  optional string workspace_root_path = 5;
+  repeated CodeBlock code_blocks = 6;
+  optional ModelDetails model_details = 7;
+  repeated string documentation_identifiers = 8;
+  string request_id = 9;
+  optional LinterErrors linter_errors = 10;
+  optional string summary = 11;
+  optional int32 summary_up_until_index = 12;
+  optional bool allow_long_file_scan = 13;
+  optional bool is_bash = 14;
+  string conversation_id = 15;
+  optional bool can_handle_filenames_after_language_ids = 16;
+  optional string use_web = 17;
+  repeated ChatQuote quotes = 18;
+  optional CmdKDebugInfo debug_info = 19;
+  optional string workspace_id = 20;
+  repeated ChatExternalLink external_links = 21;
+  repeated CommitNote commit_notes = 23;
+  optional bool long_context_mode = 22;
+  optional bool is_eval = 24;
+  optional int32 desired_max_tokens = 26;
+  // context_ast = 25; // Type definition missing
+  optional bool is_composer = 27;
+  optional bool runnable_code_blocks = 28;
+  optional bool should_cache = 29;
+  optional bool allow_model_fallbacks = 30;
+  optional int32 number_of_times_shown_fallback_model_warning = 31;
+  optional bool uses_rules = 51;
+  optional bool mode_uses_auto_apply = 53;
+  optional string unified_mode_name = 54;
+  optional bool use_generate_rules_prompt = 56;
+  optional bool edit_tool_supports_search_and_replace = 57;
+  optional bool use_unified_chat_prompt = 33;
+  optional bool use_full_inputs_context = 35;
+  optional bool is_resume = 36;
+  optional string context_bank_session_id = 40;
+  optional int32 context_bank_version = 41;
+  optional bytes context_bank_encryption_key = 43;
+  optional bool is_headless = 45;
+  optional StreamUnifiedChatRequestCodeSearchResult uses_codebase_results = 42;
+  optional StreamUnifiedChatRequestUnifiedMode unified_mode = 46;
+  repeated ClientSideToolV2 tools_requiring_accepted_return = 47;
+  optional bool should_disable_tools = 48;
+  optional StreamUnifiedChatRequestThinkingLevel thinking_level = 49;
+  optional bool should_use_chat_prompt = 50;
+  optional string background_composer_id = 55;
+  repeated ProjectLayout project_layouts = 58;
+
+  enum UnifiedMode {
+    UNIFIED_MODE_UNSPECIFIED = 0;
+    UNIFIED_MODE_CHAT = 1;
+    UNIFIED_MODE_AGENT = 2;
+    UNIFIED_MODE_EDIT = 3;
+    UNIFIED_MODE_CUSTOM = 4;
+  }
+  enum ThinkingLevel {
+    THINKING_LEVEL_UNSPECIFIED = 0;
+    THINKING_LEVEL_MEDIUM = 1;
+    THINKING_LEVEL_HIGH = 2;
+  }
+}
+
+message StreamUnifiedChatResponse {
+  string text = 1;
+  optional string server_bubble_id = 22;
+  optional string debugging_only_chat_prompt = 2;
+  optional int32 debugging_only_token_count = 3;
+  optional DocumentationCitation document_citation = 4;
+  optional string filled_prompt = 5;
+  optional bool is_big_file = 6;
+  optional string intermediate_text = 7;
+  optional bool is_using_slow_request = 10;
+  optional StreamUnifiedChatResponseChunkIdentity chunk_identity = 8;
+  optional DocsReference docs_reference = 9;
+  optional WebCitation web_citation = 11;
+  optional StatusUpdates status_updates = 12;
+  optional StreamedBackToolCall tool_call = 13;
+  optional bool should_break_ai_message = 14;
+  optional StreamedBackPartialToolCall partial_tool_call = 15;
+  optional StreamUnifiedChatResponseFinalToolResult final_tool_result = 16;
+  optional SymbolLink symbol_link = 17;
+  optional FileLink file_link = 19;
+  optional ConversationSummary conversation_summary = 18;
+  optional ServiceStatusUpdate service_status_update = 20;
+  optional ViewableGitContext viewable_git_context = 21;
+  optional ContextPieceUpdate context_piece_update = 23;
+  optional StreamUnifiedChatResponseUsedCode used_code = 24;
+  optional ConversationThinking thinking = 25;
+  optional bool stop_using_dsv3_agentic_model = 26;
+  optional string usage_uuid = 27;
+  optional ConversationSummaryStarter conversation_summary_starter = 28;
+}
+
+message StreamUnifiedChatRequestWithTools {
+  oneof request {
+    StreamUnifiedChatRequest stream_unified_chat_request = 1;
+    ClientSideToolV2Result client_side_tool_v2_result = 2;
+  }
+}
+
+message StreamUnifiedChatResponseWithTools {
+  oneof response {
+    ClientSideToolV2Call client_side_tool_v2_call = 1;
+    StreamUnifiedChatResponse stream_unified_chat_response = 2;
+    ConversationSummary conversation_summary = 3;
+  }
+}
+
+message GetPromptDryRunRequest {
+    // Contains all the details needed to simulate prompt construction.
+    StreamUnifiedChatRequest request_details = 1;
+}
+
+message CmdKExternalLink {
+    string url = 1;
+    string uuid = 2;
+}
+
+
+// --- Chat Service Messages ---
+
+
+
+
+message DocumentationChunk { // Keep this original definition
+    string doc_name = 1;
+    string page_url = 2;
+    string documentation_chunk = 3;
+    double score = 4;
+    string page_title = 5;
+}
+
+message CodeResult {
+    CodeBlock code_block = 1;
+    double score = 2;
+}
+
+
+
+
+
+// Placeholders - Define fields if known
+message ReadSemsearchFilesResult {}
+message ReadFileForImportsResult {}
+message RipgrepSearchResult {}
+message RunTerminalCommandResult {}
+message ReadFileResult {}
+message ListDirResult {}
+message EditFileResult {}
+message ToolCallFileSearchResult {}
+message SemanticSearchFullResult {}
+message CreateFileResult {}
+message DeleteFileResult {}
+message ReapplyResult {}
+message GetRelatedFilesResult {}
+message ParallelApplyResult {}
+message RunTerminalCommandV2Result {}
+message FetchRulesResult {}
+message PlannerResult {}
+message WebSearchResult {}
+message MCPResult {}
+message WebViewerResult {}
+message DiffHistoryResult {}
+message ImplementerResult {}
+message SearchSymbolsResult {}
+message BackgroundComposerFollowupResult {}// Define placeholder params messages used above if needed
+message ReadSemsearchFilesParams {}
+message ReadFileForImportsParams {}
+message RipgrepSearchParams {}
+message RunTerminalCommandParams {}
+message ReadFileParams {}
+message ListDirParams {}
+message EditFileParams {}
+message ToolCallFileSearchParams {}
+message SemanticSearchFullParams {}
+message CreateFileParams {}
+message DeleteFileParams {}
+message ReapplyParams {}
+message GetRelatedFilesParams {}
+message ParallelApplyParams {}
+message RunTerminalCommandV2Params {}
+message FetchRulesParams {}
+message PlannerParams {}
+message WebSearchParams {}
+message MCPParams {}
+message WebViewerParams {}
+message DiffHistoryParams {}
+message ImplementerParams {}
+message SearchSymbolsParams {}
+message BackgroundComposerFollowupParams {}
+message ConversationSummary {
+    string summary = 1;
+    string truncation_last_bubble_id_inclusive = 2;
+    string client_should_start_sending_from_inclusive_bubble_id = 3;
+    string previous_conversation_summary_bubble_id = 4;
+    bool includes_tool_results = 5;
+}
+
+
+
+// Commenting out duplicate ContextPieceUpdate
+/*
+message ContextPieceUpdate {
+    repeated ContextPiece pieces = 1;
+}
+*/
+
+
+
+
+
+
+// --- StreamUnifiedChatRequestWithTools etc ---
+
+// Commenting out duplicate StreamUnifiedChatRequestWithTools
+/*
+message StreamUnifiedChatRequestWithTools {
+  oneof request {
+    StreamUnifiedChatRequest stream_unified_chat_request = 1;
+    ClientSideToolV2Result client_side_tool_v2_result = 2;
+  }
+}
+*/ // Ensure this closing tag is present
+
+
+
+// Placeholders - Define fields if known
+
+// ... existing code ...
+
+// === Missing type definitions to fix Linter Errors ===
+
+message LinterError {
+  string message = 1;
+  SimpleRange range = 2;
+  LintSeverity severity = 3;
+  optional string code = 4;
+  optional string source = 5;
+  repeated RelatedInformation related_information = 6;
+}
+
+message Commit {
+  string hash = 1;
+  string message = 2;
+  string author_name = 3;
+  string author_email = 4;
+  google.protobuf.Timestamp date = 5;
+  repeated string parents = 6;
+}
+
+message PullRequest {
+    string number = 1;
+    string title = 2;
+    string body = 3;
+    string url = 4;
+    string base_branch = 5;
+    string head_branch = 6;
+    google.protobuf.Timestamp created_at = 7;
+    google.protobuf.Timestamp updated_at = 8;
+    repeated Commit commits = 9;
+    // Assuming a simple User structure for now
+    message User {
+        string login = 1;
+    }
+    User user = 10;
+}
+
+message SimpleFileDiff {
+    string relative_workspace_path = 1;
+    string original_contents = 2;
+    string new_contents = 3;
+}
+
+message InterpreterResult {
+    // Define fields based on expected interpreter result structure
+    string output = 1;
+    bool success = 2;
+    optional string error_message = 3;
+}
+
+message FolderInfo {
+    string relative_workspace_path = 1;
+    // Add other fields as needed, e.g., size, modification time
+}
+
+message UserResponseToSuggestedCodeBlock {
+    string block_id = 1; // Assuming an ID links the response to the block
+    bool accepted = 2;
+    optional string feedback = 3;
+}
+
+message ComposerCapabilityRequest {
+    // Define fields for capability requests
+    string capability_name = 1;
+    google.protobuf.Struct parameters = 2; // Using Struct for flexibility
+}
+
+message SuggestedCodeBlock {
+    string block_id = 1; // Assuming an ID for the block
+    string language_id = 2;
+    string code = 3;
+    optional string relative_workspace_path = 4;
+    optional SimplestRange range_to_replace = 5;
+}
+
+
+
+message SummarizedComposer {
+    string composer_id = 1; // Assuming an ID
+    string summary = 2;
+}
+
+message CurrentFileLocationData {
+    string relative_workspace_path = 1;
+    CursorPosition cursor_position = 2;
+    SimpleRange selection_range = 3;
+}
+
+// Using google.protobuf.Struct for ProjectLayout as definition is complex/unknown
+message ProjectLayout {
+    string root_uri = 1;
+    google.protobuf.Struct layout = 2; // Placeholder for potentially complex structure
+}
+
+message GetLintsForChangeResponse {
+    repeated LinterError errors = 1;
+}
+
+// Placeholder for StreamedBackToolCall until defined
+message StreamedBackToolCall {
+  string tool_call_id = 1;
+  string name = 2;
+  google.protobuf.Struct arguments = 3; // Using Struct for flexibility
+}
+
+// Placeholder for ClientSideToolV2Call until defined
+message ClientSideToolV2Call {
+    ClientSideToolV2 tool = 1;
+    string tool_call_id = 2;
+    string name = 3;
+    google.protobuf.Struct arguments = 4; // Using Struct for flexibility
+}
+
+
+// === End Missing type definitions ===
+
+

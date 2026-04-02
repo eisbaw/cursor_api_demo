@@ -1,0 +1,550 @@
+syntax = "proto3";
+
+package aiserver.v1;
+
+import "google/protobuf/empty.proto";
+
+// ── helper messages & enums ──
+message Empty {} // Local Empty, distinct from google.protobuf.Empty if needed for other services.
+message ProfilingConfig {}
+message BackgroundComposerConfig {
+  bool enable_background_agent = 1;
+  bool show_background_agent_in_beta_settings = 2;
+}
+
+enum Http2Config {
+  HTTP2_CONFIG_UNSPECIFIED = 0;
+  HTTP2_CONFIG_FORCE_ALL_DISABLED = 1;
+  HTTP2_CONFIG_FORCE_ALL_ENABLED = 2;
+  HTTP2_CONFIG_FORCE_BIDI_DISABLED = 3;
+  HTTP2_CONFIG_FORCE_BIDI_ENABLED = 4;
+}
+
+// ── Bug bot ──
+message BugBotV1 {
+  bool   enabled = 1;
+  // tag 2 is missing from the original proto, no info in charles dump.
+  int32  background_call_frequency_ms = 3;
+  // tags 4, 5 are missing from the original proto, no info in charles dump.
+  int32  background_diff_absolute_max_tokens = 6;
+  int32  background_diff_min_min_token_threshold = 7;
+  int32  background_diff_min_max_token_threshold = 8;
+  double background_diff_last_commit_less_than_this_many_ms_ago = 9;
+  int32  default_diff_context_lines = 10;
+  int32  diff_absolute_max_tokens = 11;
+  int32  custom_instructions_max_char_length = 12;
+  int32  default_fallback_iterations = 13;
+  int32  threshold_for_expensive_run_modal_cents = 14;
+  int32  background_unified_context_lines = 15;
+  bool   background_diff_include_uncommitted = 16; // Not in Charles dump, keeping from original
+  string cheap_model_name = 17;
+  int32  cheap_absolute_max_tokens = 18;
+  int32  expensive_absolute_max_tokens = 19;
+}
+
+message BugConfigResponse {
+  Empty    linter_strategy_v1 = 1;
+  BugBotV1 bug_bot_v1         = 2;
+  Empty    linter_strategy_v2 = 3;
+}
+
+// ── Indexing ──
+message IndexingConfig {
+  int32  max_concurrent_uploads           = 1;
+  int32  absolute_max_number_files        = 2;
+  int32  max_file_retries                 = 3;
+  int32  sync_concurrency                 = 4;
+  int32  auto_indexing_max_num_files      = 5;
+  int32  indexing_period_seconds          = 6;
+  string repo42_auth_token                = 7;
+  optional bool incremental               = 8;
+  optional string default_user_path_encryption_key = 9;
+  optional string default_team_path_encryption_key = 10;
+  optional bool multi_root_indexing_enabled = 11;
+  double copy_status_check_period_seconds = 12;
+  int32  copy_timeout_seconds             = 13;
+}
+
+// ── Tracing ──
+message ClientTracingConfig {
+  double global_sample_rate          = 1;
+  double traces_sample_rate          = 2;
+  double logger_sample_rate          = 3;
+  double minidump_sample_rate        = 4;
+  double error_rate_limit            = 5;
+  double performance_unit_rate_limit = 6;
+  double profiles_sample_rate        = 7;
+  double json_stringify_sample_rate  = 8;
+}
+
+// ── Chat ──
+message ChatConfig {
+  bool disable_unification = 1;
+  int32 full_context_token_limit = 2;
+  bool disable_yolo_mode = 3;
+  int32 max_rule_length = 4;
+  int32 max_mcp_tools   = 5;
+  int32 warn_mcp_tools  = 6;
+  string summarization_message = 7;
+}
+
+// ── Metrics & Auto‑context ──
+message MetricsConfig {
+  bool enabled_in_privacy_mode = 2;
+  bool enabled_in_non_privacy_mode = 3;
+}
+
+message AutoContextConfig {
+  bool enabled = 1;
+  bool enabled_fallback = 2;
+  bool enabled_git_graph = 3;
+  bool enabled_sem_search = 4;
+  bool enabled_v2 = 5;
+}
+
+message MemoryMonitorConfig {
+  bool enabled = 1;
+  bool show_status_entry = 2;
+  optional int32 base_threshold_mb = 3;
+  optional int32 critical_offset_mb = 4;
+}
+
+// Message for field 12 in GetServerConfigResponse
+message ModelMigration {
+  string id = 1;
+  string model_setting = 2;
+  string target_model = 3;
+  optional string previous_model = 4;
+  optional bool migrate_mode_models = 5;
+  optional bool remove_previous_model = 6;
+  optional bool max_mode = 7;
+}
+
+// Message for field 14 in GetServerConfigResponse
+message FolderSizeLimit {
+  int32 max_total_bytes = 1;
+  int32 max_num_files = 2;
+}
+
+
+// ── Root Configuration Object ──
+message GetServerConfigResponse {
+  BugConfigResponse        bug_config_response        = 1;
+  bool is_dev_do_not_use_for_secret_things_because_can_be_spoofed_by_users = 2;
+  IndexingConfig           indexing_config            = 3;
+  ClientTracingConfig      client_tracing_config      = 4;
+  ChatConfig               chat_config                = 5;
+  string                   config_version             = 6;
+  Http2Config              http2_config               = 7;
+  ProfilingConfig          profiling_config           = 8;
+  MetricsConfig            metrics_config             = 9;
+  BackgroundComposerConfig background_composer_config = 10;
+  AutoContextConfig        auto_context_config        = 11;
+  repeated ModelMigration  model_migrations           = 12;
+  MemoryMonitorConfig      memory_monitor_config      = 13;
+  FolderSizeLimit          folder_size_limit          = 14;
+}
+
+// === AvailableModels ===
+
+message AvailableModelsRequest {
+  optional bool is_nightly = 1;
+  optional bool include_long_context_models = 2;
+}
+
+message AvailableModelsResponse {
+  // Describes a single available model.
+  message AvailableModel {
+    string name = 1;
+    bool default_on = 2;
+    optional bool is_long_context_only = 3;
+    optional bool is_chat_only = 4;
+    optional bool supports_agent = 5;
+    optional DegradationStatus degradation_status = 6;
+    optional double price = 7;
+    optional TooltipData tooltip_data = 8;
+    optional bool supports_thinking = 9;
+    optional bool supports_images = 10;
+    optional bool supports_auto_context = 11;
+    optional int32 auto_context_max_tokens = 12;
+    optional int32 auto_context_extended_max_tokens = 13;
+    optional bool supports_max_mode = 14;
+    optional int32 context_token_limit = 15;
+    optional int32 context_token_limit_for_max_mode = 16;
+    optional string client_display_name = 17;
+    optional string server_model_name = 18;
+    optional bool supports_non_max_mode = 19;
+    optional TooltipData tooltip_data_for_max_mode = 20;
+  }
+
+  // Enum for model degradation status.
+  enum DegradationStatus {
+    DEGRADATION_STATUS_UNSPECIFIED = 0;
+    DEGRADATION_STATUS_DEGRADED = 1;
+    DEGRADATION_STATUS_DISABLED = 2;
+  }
+
+  // Data for model tooltips in the UI.
+  message TooltipData {
+    string primary_text = 1;
+    string secondary_text = 2;
+    bool secondary_warning_text = 3;
+    string icon = 4;
+  }
+
+  repeated AvailableModel models = 2;
+  repeated string model_names = 1; // Potentially deprecated or less structured field
+}
+
+
+// === GetDefaultModelNudgeData ===
+
+message GetDefaultModelNudgeDataRequest {
+  // Empty request based on analyzed code snippet.
+}
+
+message GetDefaultModelNudgeDataResponse {
+  string nudge_date = 1;
+  bool should_default_switch_on_new_chat = 2;
+  repeated string models_with_no_default_switch = 3;
+}
+
+// === CheckFeatureStatus ===
+
+message CheckFeatureStatusRequest {
+  string feature_name = 1;
+}
+
+message CheckFeatureStatusResponse {
+  bool enabled = 1;
+}
+
+// === FSConfig ===
+
+message FSConfigRequest {
+  // Empty request based on analyzed code snippet.
+}
+
+message FSConfigResponse {
+  optional double check_filesync_hash_percent = 1;
+  optional int32 rate_limiter_breaker_reset_time_ms = 2;
+  optional int32 rate_limiter_rps = 3;
+  optional int32 rate_limiter_burst_capacity = 4;
+  optional int32 max_recent_updates_stored = 5;
+  optional int32 max_model_version_cache_size = 6;
+  optional int32 max_file_size_to_sync_bytes = 7;
+  optional int32 sync_retry_max_attempts = 8;
+  optional int32 sync_retry_initial_delay_ms = 9;
+  optional int32 sync_retry_time_multiplier = 10;
+  optional int32 file_sync_status_max_cache_size = 11;
+  optional int32 successive_syncs_required_for_reliance = 12;
+  optional int32 extra_successful_syncs_needed_after_errors = 13;
+  optional int32 big_change_stripping_threshold_bytes = 14;
+  optional int32 last_n_updates_to_send = 15;
+  optional int32 file_sync_status_ttl_ms = 16;
+  optional int32 sync_debounce_ms = 17;
+  optional int32 sync_update_threshold = 18;
+}
+
+// === Cursor Prediction Config (Is Enabled Check) ===
+
+message IsCursorPredictionEnabledRequest {
+  // Empty request based on analyzed code snippet.
+}
+
+message IsCursorPredictionEnabledResponse {
+  bool enabled = 1;
+}
+
+// === Model Details (dependency for CheckQueuePositionRequest) ===
+message AzureState {
+    string api_key = 1;
+    string base_url = 2;
+    string deployment = 3;
+    bool use_azure = 4;
+}
+
+message BedrockState {
+  string access_key = 1;
+  string secret_key = 2;
+  string region = 3;
+  bool use_bedrock = 4;
+  optional string session_token = 5;
+}
+
+message ModelDetails {
+  optional string model_name = 1;
+  optional string api_key = 2;
+  optional bool enable_ghost_mode = 3;
+  optional AzureState azure_state = 4;
+  optional bool enable_slow_pool = 5;
+  optional string openai_api_base_url = 6;
+  optional BedrockState bedrock_state = 7;
+}
+
+
+// === CheckQueuePosition ===
+
+message CheckQueuePositionRequest {
+    string orig_request_id = 1;
+    optional ModelDetails model_details = 2;
+    string usage_uuid = 3;
+}
+
+// Nested messages for UsageEventDetails
+message UsageEventDetails {
+    oneof feature {
+        Chat chat = 1;
+        ContextChat context_chat = 2;
+        CmdK cmd_k = 3;
+        TerminalCmdK terminal_cmd_k = 4;
+        AiReviewAcceptedComment ai_review_accepted_comment = 5;
+        InterpreterChat interpreter_chat = 6;
+        SlashEdit slash_edit = 7;
+        Composer composer = 8;
+        FastApply fast_apply = 9;
+        WarmComposer warm_composer = 10;
+        BugFinderTriggerV1 bug_finder_trigger_v1 = 11;
+        ToolCallComposer tool_call_composer = 12;
+    }
+    optional int32 override_num_requests_counted = 13;
+
+    message Chat {
+        string model_intent = 1;
+        optional int32 override_num_requests_counted = 2;
+    }
+    message ContextChat {
+        string model_intent = 1;
+        optional int32 override_num_requests_counted = 2;
+    }
+    message CmdK {
+        string model_intent = 1;
+        optional int32 override_num_requests_counted = 2;
+    }
+    message TerminalCmdK {
+        string model_intent = 1;
+        optional int32 override_num_requests_counted = 2;
+    }
+    message AiReviewAcceptedComment {}
+    message InterpreterChat {
+        string model_intent = 1;
+        optional int32 override_num_requests_counted = 2;
+    }
+    message SlashEdit {
+        string model_intent = 1;
+    }
+     message Composer {
+        string model_intent = 1;
+        optional int32 override_num_requests_counted = 2;
+        optional bool is_headless = 3;
+    }
+    message FastApply {
+        bool is_optimistic = 1;
+        bool willing_to_pay_extra_for_speed = 2;
+    }
+    message WarmComposer {
+        string model_intent = 1;
+    }
+    message BugFinderTriggerV1 {
+        bool in_background_subsidized = 1;
+        int32 cost_cents = 2;
+        bool is_fast = 3;
+    }
+    message ToolCallComposer {
+        string model_intent = 1;
+        optional int32 override_num_requests_counted = 2;
+        optional bool is_headless = 3;
+    }
+}
+
+message CheckQueuePositionResponse {
+  int32 position = 1;
+  optional int32 seconds_left_to_wait = 2;
+  optional int32 new_queue_position = 7;
+  bool hit_hard_limit = 3;
+  bool could_enable_usage_based_pricing_to_skip = 4;
+  UsageEventDetails usage_event_details = 5;
+  CustomLink custom_link = 6;
+  optional ModelForSlowPoolNudgeData model_for_slow_pool_nudge_data = 8;
+
+  message CustomLink {
+      string address = 1;
+      string message = 2;
+  }
+
+  message ModelForSlowPoolNudgeData {
+      string model = 1;
+      string message = 2;
+  }
+}
+
+
+// ── Services ──
+
+service ServerConfigService {
+  rpc GetServerConfig (google.protobuf.Empty) returns (GetServerConfigResponse);
+}
+
+service AiService {
+  rpc AvailableModels(AvailableModelsRequest) returns (AvailableModelsResponse);
+  rpc GetDefaultModelNudgeData(GetDefaultModelNudgeDataRequest) returns (GetDefaultModelNudgeDataResponse);
+  rpc CheckFeatureStatus(CheckFeatureStatusRequest) returns (CheckFeatureStatusResponse);
+  rpc CheckFeatureStatusUnauthenticated(CheckFeatureStatusRequest) returns (CheckFeatureStatusResponse);
+  rpc IsCursorPredictionEnabled(IsCursorPredictionEnabledRequest) returns (IsCursorPredictionEnabledResponse);
+  rpc CheckQueuePosition(CheckQueuePositionRequest) returns (CheckQueuePositionResponse);
+}
+
+service DashboardService {
+  rpc GetUsageBasedPremiumRequests (GetUsageBasedPremiumRequestsRequest) returns (GetUsageBasedPremiumRequestsResponse);
+  rpc SetUsageBasedPremiumRequests (SetUsageBasedPremiumRequestsRequest) returns (SetUsageBasedPremiumRequestsResponse);
+  rpc GetHardLimit (GetHardLimitRequest) returns (GetHardLimitResponse);
+  rpc SetHardLimit (SetHardLimitRequest) returns (SetHardLimitResponse);
+  rpc GetClientUsageData (GetClientUsageDataRequest) returns (GetClientUsageDataResponse);
+  rpc GetTokenUsage (GetTokenUsageRequest) returns (GetTokenUsageResponse);
+}
+
+message GetUsageBasedPremiumRequestsRequest {
+  int64 team_id = 1;
+}
+
+message GetUsageBasedPremiumRequestsResponse {
+  bool usage_based_premium_requests = 1;
+}
+
+message GetHardLimitRequest {
+  int64 team_id = 1;
+}
+
+message GetHardLimitResponse {
+  int32 hard_limit = 1;
+  bool no_usage_based_allowed = 2;
+  int32 hard_limit_per_user = 3;
+}
+
+message GetClientUsageDataRequest {
+  string conversation_id = 1;
+  int64 timestamp_before_request = 2;
+  bool shouldUseLongHistoryStack = 3;
+}
+
+message GetClientUsageDataResponse {
+  message NameToCost {
+    string name = 1;
+    int32 cost_in_cents = 2;
+  }
+  repeated NameToCost items_with_cost = 1;
+}
+
+message GetTokenUsageRequest {
+  string usage_uuid = 1;
+}
+
+message GetTokenUsageResponse {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+}
+
+message SetHardLimitRequest {
+  optional int64 team_id = 1;
+  int32 hard_limit = 2;
+  bool no_usage_based_allowed = 3;
+  int32 hard_limit_per_user = 4;
+}
+
+message SetHardLimitResponse {
+  // Empty response
+}
+
+message SetUsageBasedPremiumRequestsRequest {
+  int64 team_id = 1;
+  bool usage_based_premium_requests = 2;
+}
+
+message SetUsageBasedPremiumRequestsResponse {
+  // Empty response
+}
+
+service FileSyncService {
+  rpc FSConfig(FSConfigRequest) returns (FSConfigResponse);
+}
+
+// === GetPromptDryRun Messages (copied from server_config_update.proto) ===
+
+message CodeChunkContextInclusionInfoV2 {
+  enum Intent {
+    INTENT_UNSPECIFIED = 0;
+    INTENT_FILE = 1;
+    INTENT_SELECTION = 2;
+  }
+  enum InclusionType {
+    INCLUSION_TYPE_UNSPECIFIED = 0;
+    INCLUSION_TYPE_FULL = 1;
+    INCLUSION_TYPE_OUTLINE = 2;
+    INCLUSION_TYPE_FILENAME = 3;
+  }
+
+  string relative_workspace_path = 1;
+  int32 start_line_number = 2;
+  int32 end_line_number_inclusive = 3;
+  Intent intent = 4;
+  InclusionType inclusion_type = 10;
+  optional string tooltip_text = 6;
+  optional bool pill_is_dashed = 9;
+  optional string pill_sub_codicon_name = 8;
+  optional string detail_text = 5;
+  optional string codicon_name = 7;
+}
+
+message CodeChunkContextInclusionInfo {
+  enum InclusionType {
+    INCLUSION_TYPE_UNSPECIFIED = 0;
+    INCLUSION_TYPE_FULL = 1;
+    INCLUSION_TYPE_OUTLINE = 2;
+    INCLUSION_TYPE_FILENAME = 3;
+  }
+  enum Intent {
+    INTENT_UNSPECIFIED = 0;
+    INTENT_FILE = 1;
+    INTENT_SELECTION = 2;
+  }
+  message TokenCount {
+    bool is_too_large_to_count = 1;
+    int32 num_tokens = 2;
+  }
+
+  string relative_workspace_path = 1;
+  int32 start_line_number = 2;
+  int32 end_line_number_inclusive = 3;
+  InclusionType inclusion_type = 4;
+  int32 full_file_token_count = 5; // Potentially deprecated by field 11
+  int32 prompt_token_count = 6;
+  TokenCount full_file_tokens_count = 11;
+  optional string exclusion_tooltip = 7;
+  Intent intent = 8;
+  bool chunk_is_from_last_user_message = 9;
+  bool is_compressed = 10;
+}
+
+message GetPromptDryRunResponse {
+  message TokenCount {
+    bool is_over_token_limit = 1;
+    optional int32 num_tokens = 2;
+  }
+
+  repeated CodeChunkContextInclusionInfo code_chunks = 1; // Older version
+  int32 user_message_token_limit = 3;
+  TokenCount user_message_token_count = 4;
+  TokenCount full_conversation_token_count = 5;
+  repeated CodeChunkContextInclusionInfoV2 code_chunks_v2 = 6; // Newer version
+  string folder_exclusion_tooltip = 2;
+  double bar_fraction = 7;
+  bool did_bar_overflow = 8;
+}
+
+// Service for chat related functionalities, including GetPromptDryRun
+// REMOVED: This service definition is more complete in server_chat.proto
+// service ChatService {
+//   // Assuming GetPromptDryRunRequest might be google.protobuf.Empty for now
+//   // or a more complex message if defined by client usage.
+//   rpc GetPromptDryRun(google.protobuf.Empty) returns (GetPromptDryRunResponse);
+// }

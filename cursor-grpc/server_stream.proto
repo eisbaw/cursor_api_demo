@@ -1,0 +1,190 @@
+syntax = "proto3";
+
+package aiserver.v1; // Using the package from the original JS context
+
+import "google/protobuf/empty.proto"; // For Field 23
+import "google/protobuf/struct.proto"; // For flexible structs like arguments/metadata
+
+// --- Service Definition ---
+service DashboardService {
+  // RPC method to get the hard usage limits
+  rpc GetHardLimit (GetHardLimitRequest) returns (GetHardLimitResponse);
+}
+
+// Request message for the GetHardLimit RPC
+message GetHardLimitRequest {
+  // Optional: The ID of the team for which to retrieve the limit.
+  // If omitted, might return the limit for the current user or a default.
+  // T: 5 likely maps to int32 or uint32. opt:!0 makes it optional.
+  optional int32 team_id = 1;
+}
+
+// Response message for the GetHardLimit RPC
+message GetHardLimitResponse {
+  // The primary hard limit value (e.g., request count, token count).
+  // T: 5 likely maps to int32 or uint32.
+  int32 hard_limit = 1;
+
+  // Flag indicating if usage beyond the hard limit (potentially paid)
+  // is disallowed.
+  // T: 8 maps to bool.
+  bool no_usage_based_allowed = 2;
+
+  // A separate hard limit applied on a per-user basis within a team.
+  // T: 5 likely maps to int32 or uint32.
+  int32 hard_limit_per_user = 3;
+}
+service UnifiedChatService {
+  // Assuming SSE implies server-streaming, but keeping request stream for flexibility
+  // If it's truly just SSE server->client, change request to non-stream
+  rpc StreamUnifiedChatWithToolsSSE (stream StreamUnifiedChatWithToolsRequest) returns (stream StreamUnifiedChatWithToolsResponse);
+}
+
+// --- Messages ---
+
+// Matches the framing observed: contains one part per message
+message StreamUnifiedChatWithToolsResponse {
+  // Potential common fields like sequence number could go here (e.g., int64 seq_no = 1;)
+  ResponsePart part = 2; // Field #2 consistently holds the main payload part
+  // Could have other top-level fields like final metadata, error status, etc.
+}
+
+// Represents one chunk/part of the response stream payload
+message ResponsePart {
+  // A oneof seems most likely given the different field numbers observed
+  // inside the Field #2 payload of the outer message.
+  oneof content {
+    // Field #23: Seen with zero length payload. Maybe metadata, marker, or start/end signal?
+    google.protobuf.Empty metadata_marker = 23; // Placeholder name
+
+    // Field #27: Seen with a UUID-like string. Could be an ID for the chunk or bubble.
+    string bubble_id = 27; // Or chunk_id
+
+    // Field #25: Seen with nested message containing text and other data. Most likely content.
+    ContentPart message_part = 25;
+
+    // Other potential parts based on service capabilities (e.g., tool calls)
+    ToolCall tool_call = 26;       // Example: If tool calls use field 26
+    FinalResponse final_response = 28; // Example: If final response uses field 28
+    ErrorDetails error_details = 29; // Example: If error uses field 29
+  }
+}
+
+// Corresponds to the nested message seen within Field #25
+message ContentPart {
+  string text = 1;                 // Field #1 seen with text
+  // Field #2 seen with base64-like data. Could be metadata, citations, etc.
+  // Using Struct for flexibility until its exact nature is known.
+  google.protobuf.Struct metadata = 2; // Or 'citations', 'related_data' etc.
+  // Could potentially have other fields like 'part_index' if content is multi-part,
+  // but not directly observed in this specific hex section's nested part.
+}
+
+// Represents a tool call requested by the model (Example structure for field 26)
+message ToolCall {
+ string tool_call_id = 1;
+ string tool_name = 2;
+ google.protobuf.Struct arguments = 3;
+}
+
+// Represents the final response details (Example structure for field 28)
+message FinalResponse {
+  StopReason stop_reason = 1;
+  UsageMetadata usage_metadata = 2;
+}
+
+// Represents error details (Example structure for field 29)
+message ErrorDetails {
+  int32 code = 1;
+  string message = 2;
+}
+
+// --- Enums and Other Shared Types (similar to previous attempt) ---
+
+enum StopReason {
+  STOP_REASON_UNSPECIFIED = 0;
+  STOP_SEQUENCE = 1;
+  MAX_TOKENS = 2;
+  TOOL_USE = 3;
+  CONTENT_FILTERED = 4;
+  OTHER = 5;
+}
+
+message UsageMetadata {
+  int32 prompt_token_count = 1;
+  int32 candidates_token_count = 2;
+  int32 total_token_count = 3;
+}
+
+// --- Request Side (Minimal definition based on typical needs) ---
+// This part is less certain without seeing request hex dumps.
+
+message StreamUnifiedChatWithToolsRequest {
+  oneof request_payload {
+    InitialRequest initial_request = 1;
+    ToolResult tool_result = 2;
+    UserMessage user_message = 3;
+  }
+}
+
+message InitialRequest {
+  repeated ChatMessage messages = 1;
+  repeated Tool tools = 2;
+  ChatSettings chat_settings = 3;
+  google.protobuf.Struct metadata = 4;
+}
+
+message ChatMessage {
+  Role role = 1;
+  repeated RequestContentPart parts = 2; // Renamed to avoid conflict if parts differ
+  string tool_call_id = 3;
+  string name = 4;
+}
+
+message RequestContentPart { // May differ slightly from response ContentPart
+  oneof part {
+    string text = 1;
+    Image image = 2;
+    google.protobuf.Struct custom = 3;
+  }
+}
+
+message Image {
+  string mime_type = 1;
+  oneof data {
+    bytes image_bytes = 2;
+    string image_uri = 3;
+  }
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  USER = 1;
+  ASSISTANT = 2;
+  TOOL = 3;
+  SYSTEM = 4;
+}
+
+message Tool {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Struct input_schema = 3;
+}
+
+message ChatSettings {
+  string model_id = 1;
+  float temperature = 2;
+  int32 max_output_tokens = 3;
+  repeated string stop_sequences = 4;
+}
+
+message ToolResult {
+  string tool_call_id = 1;
+  // Use Struct for flexibility in tool results, or define specific result types
+  google.protobuf.Struct result = 2;
+  bool is_error = 3;
+}
+
+message UserMessage {
+   ChatMessage message = 1;
+}

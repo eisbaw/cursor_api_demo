@@ -1,0 +1,296 @@
+syntax = "proto3";
+
+package aiserver.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "server_config.proto"; // Import server_config to use its definitions
+
+// =============================================
+// === Placeholder/Common Type Definitions ===
+// =============================================
+
+// Define placeholders for types assumed to exist elsewhere or need full definition later
+message SimplestRange {
+  int32 start_line = 1;
+  int32 end_line_inclusive = 2;
+}
+
+// Removed duplicate ModelDetails definition - will use the one from server_config.proto
+
+message ClientSideToolV2 {
+  string tool_name = 1;
+  // Add other fields if known
+}
+
+message ConversationSummary {
+  string summary = 1;
+  // Add other fields if known
+}
+
+message CmdKDebugInfo { string debug_info = 1; }
+message Image { string image_url = 1; }
+message Link { string url = 1; }
+message CppFileDiffTrajectory { string diff_data = 1; }
+message ProjectRule { string rule_definition = 1; }
+message ServerError { string message = 1; optional int32 code = 2; }
+message ToolAgentMessage { string message_id = 1; string content = 2; }
+
+
+// =============================================
+// === GetPromptDryRun Definitions ===
+// =============================================
+
+// Removed CodeChunkContextInclusionInfoV2 - will use the one from server_config.proto
+// message CodeChunkContextInclusionInfoV2 { ... }
+
+// Removed CodeChunkContextInclusionInfo - will use the one from server_config.proto
+// message CodeChunkContextInclusionInfo { ... }
+
+// Removed GetPromptDryRunResponse - will use the one from server_config.proto
+// message GetPromptDryRunResponse { ... }
+
+
+// ==================================================================
+// === StreamUnifiedChatWithToolsSSE Request Related Definitions ===
+// ==================================================================
+
+message PotentiallyCachedContextItem {
+  oneof item {
+    ContextItem context_item = 1 [json_name = "contextItem"];
+    string context_item_hash = 2 [json_name = "contextItemHash"];
+  }
+}
+
+message ContextItem {
+  message FileChunk {
+    string relative_workspace_path = 1 [json_name = "relativeWorkspacePath"];
+    string chunk_contents = 2 [json_name = "chunkContents"];
+    int32 start_line_number = 3 [json_name = "startLineNumber"];
+  }
+   message OutlineChunk {
+     string relative_workspace_path = 1 [json_name = "relativeWorkspacePath"];
+     string contents = 2;
+     SimplestRange full_range = 3 [json_name = "fullRange"]; // Using placeholder
+   }
+   // Placeholder for ContextIntent
+   // message ContextIntent { ... }
+   // ContextIntent intent = 1;
+
+  oneof item {
+    FileChunk file_chunk = 2 [json_name = "fileChunk"];
+    OutlineChunk outline_chunk = 3 [json_name = "outlineChunk"];
+    // Add other oneof fields like CmdKSelection, CustomInstructions, Lints, etc. if needed
+  }
+}
+
+message CmdKOptions {
+  ModelDetails model_details = 3 [json_name = "modelDetails"]; // This will now resolve to the imported ModelDetails
+  bool chat_mode = 1 [json_name = "chatMode"];
+  bool ada_cmd_k_context = 2 [json_name = "adaCmdKContext"];
+  optional bool use_reranker = 4 [json_name = "useReranker"];
+  optional bool use_web = 5 [json_name = "useWeb"];
+  optional bool request_is_for_caching = 6 [json_name = "requestIsForCaching"];
+}
+
+message CmdKLegacyContext {
+   // ExplicitContext explicit_context = 4; // Placeholder
+   // repeated PromptCodeBlock prompt_code_blocks = 12; // Placeholder
+   repeated string documentation_identifiers = 10 [json_name = "documentationIdentifiers"];
+}
+
+message CmdKPreviousEdit {
+   repeated string original_lines = 1 [json_name = "originalLines"];
+   repeated string new_lines = 2 [json_name = "newLines"];
+   string relative_path = 3 [json_name = "relativePath"];
+   repeated string extra_context_above = 4 [json_name = "extraContextAbove"];
+   repeated string extra_context_below = 5 [json_name = "extraContextBelow"];
+}
+
+message CmdKUpcomingEdit {
+   repeated string original_lines = 1 [json_name = "originalLines"];
+   string relative_path = 3 [json_name = "relativePath"];
+   repeated string extra_context_above = 4 [json_name = "extraContextAbove"];
+   repeated string extra_context_below = 5 [json_name = "extraContextBelow"];
+}
+
+message StreamUnifiedChatWithToolsSSERequest {
+  enum UnifiedMode { UNIFIED_MODE_UNSPECIFIED = 0; UNIFIED_MODE_CHAT = 1; UNIFIED_MODE_AGENT = 2; UNIFIED_MODE_EDIT = 3; UNIFIED_MODE_CUSTOM = 4; }
+  enum ThinkingLevel { THINKING_LEVEL_UNSPECIFIED = 0; THINKING_LEVEL_MEDIUM = 1; THINKING_LEVEL_HIGH = 2; }
+
+  message RecentEdits {
+     message CodeBlockInfo {
+        string relative_workspace_path = 1 [json_name = "relativeWorkspacePath"];
+        optional string content_before = 2 [json_name = "contentBefore"];
+        optional string content_after = 3 [json_name = "contentAfter"];
+        optional string generation_uuid = 4 [json_name = "generationUuid"];
+        optional int32 version = 5;
+     }
+     message FinalFileValue {
+        string relative_workspace_path = 1 [json_name = "relativeWorkspacePath"];
+        string content = 2;
+     }
+     repeated CodeBlockInfo code_block_info = 1 [json_name = "codeBlockInfo"];
+     repeated FinalFileValue final_file_values = 2 [json_name = "finalFileValues"];
+     optional string edits_belong_to_composer_generation_uuid = 3 [json_name = "editsBelongToComposerGenerationUuid"];
+  }
+
+   message TimingInfo {
+     double user_input_time = 1 [json_name = "userInputTime"];
+     double stream_cmdk_time = 2 [json_name = "streamCmdkTime"];
+   }
+
+  message BranchDiff {
+      message FileDiff {
+          string file_name = 1 [json_name = "fileName"];
+          string diff = 2;
+          bool too_big = 3 [json_name = "tooBig"];
+      }
+      // message Commit { string hash=1; ... } // Placeholder
+      repeated FileDiff file_diffs = 1 [json_name = "fileDiffs"];
+      // repeated Commit commits = 2;
+  }
+
+  repeated PotentiallyCachedContextItem context_items = 1 [json_name = "contextItems"];
+  optional CmdKOptions cmd_k_options = 2 [json_name = "cmdKOptions"];
+  optional CmdKDebugInfo cmd_k_debug_info = 4 [json_name = "cmdKDebugInfo"]; // Placeholder
+  string session_id = 6 [json_name = "sessionId"];
+  optional CmdKLegacyContext legacy_context = 5 [json_name = "legacyContext"];
+  bool use_web = 10 [json_name = "useWeb"];
+  repeated CmdKPreviousEdit previous_edits = 11 [json_name = "previousEdits"];
+  repeated CmdKUpcomingEdit upcoming_edits = 12 [json_name = "upcomingEdits"];
+  repeated Image images = 13; // Placeholder
+  repeated Link links = 14; // Placeholder
+  repeated CppFileDiffTrajectory diff_history = 15 [json_name = "diffHistory"]; // Placeholder
+  optional BranchDiff diff_to_base_branch = 16 [json_name = "diffToBaseBranch"];
+  optional TimingInfo timing_info = 17 [json_name = "timingInfo"];
+  repeated ProjectRule rules = 18; // Placeholder
+  repeated ClientSideToolV2 client_side_tool_v2s = 19 [json_name = "clientSideToolV2s"]; // Placeholder
+  string model_override = 20 [json_name = "modelOverride"];
+  bool max_mode = 21 [json_name = "maxMode"];
+  string agent_conversation_id = 22 [json_name = "agentConversationId"];
+  UnifiedMode unified_mode = 23 [json_name = "unifiedMode"];
+  optional RecentEdits recent_edits = 24 [json_name = "recentEdits"];
+  string composer_generation_uuid = 25 [json_name = "composerGenerationUuid"];
+  optional ConversationSummary conversation_summary = 26 [json_name = "conversationSummary"]; // Placeholder
+  ThinkingLevel thinking_level = 27 [json_name = "thinkingLevel"];
+}
+
+
+// ===================================================================
+// === StreamUnifiedChatWithToolsSSE Response Related Definitions ===
+// ===================================================================
+
+message ClientSideToolV2Call {
+    ClientSideToolV2 tool = 1; // Placeholder
+    string tool_call_id = 2 [json_name = "toolCallId"];
+    string name = 3;
+    google.protobuf.Struct arguments = 4; // Using Struct for flexibility
+}
+
+message ContextItemStatus {
+   enum PostGenerationEvaluation { POST_GENERATION_EVALUATION_UNSPECIFIED = 0; POST_GENERATION_EVALUATION_USEFUL = 1; POST_GENERATION_EVALUATION_USELESS = 2; }
+   string context_item_hash = 1 [json_name = "contextItemHash"];
+   bool shown_to_the_model = 2 [json_name = "shownToTheModel"];
+   float score = 3;
+   float percentage_of_available_space = 4 [json_name = "percentageOfAvailableSpace"];
+   PostGenerationEvaluation post_generation_evaluation = 5 [json_name = "postGenerationEvaluation"];
+}
+
+message ContextStatusUpdate {
+   repeated ContextItemStatus context_item_statuses = 1 [json_name = "contextItemStatuses"];
+}
+
+message MissingContextItems {
+   repeated string missing_context_item_hashes = 2 [json_name = "missingContextItemHashes"];
+}
+
+message StreamUnifiedChatWithToolsResponse {
+  enum FinishReason { FINISH_REASON_UNSPECIFIED = 0; FINISH_REASON_DONE = 1; FINISH_REASON_ERROR = 2; FINISH_REASON_BLOCKED = 3; FINISH_REASON_CANCELLED = 4; FINISH_REASON_RECITATION = 5; FINISH_REASON_TOOL_CALLS = 6; }
+
+  message ContentBlock { string text = 1; }
+  message ToolCall { ClientSideToolV2Call tool_call = 1 [json_name = "toolCall"]; }
+  message ToolCallsGenerationDone { bool done = 1; /* Placeholder */ }
+  message ToolCallsChunk { repeated ClientSideToolV2Call tool_calls = 1 [json_name = "toolCalls"]; }
+  message ToolContentBlock { string tool_call_id = 1 [json_name = "toolCallId"]; string content = 2; }
+  message Error { string message = 1; }
+  message Usage {
+     int32 input_tokens = 1 [json_name = "inputTokens"];
+     int32 output_tokens = 2 [json_name = "outputTokens"];
+     int32 cache_write_tokens = 3 [json_name = "cacheWriteTokens"];
+     int32 cache_read_tokens = 4 [json_name = "cacheReadTokens"];
+     float total_cents = 5 [json_name = "totalCents"];
+  }
+  message ToolCallsStart { bool started = 1; /* Placeholder */ }
+
+  oneof response {
+    ContentBlock content = 1;
+    ToolCall tool_call = 2 [json_name = "toolCall"];
+    ToolCallsGenerationDone tool_calls_generation_done = 3 [json_name = "toolCallsGenerationDone"];
+    ToolCallsChunk tool_calls_chunk = 4 [json_name = "toolCallsChunk"];
+    ToolContentBlock tool_content_block = 5 [json_name = "toolContentBlock"];
+    Error error = 6;
+    FinishReason finish_reason = 7 [json_name = "finishReason"];
+    ServerError server_error = 8 [json_name = "serverError"]; // Placeholder
+    ToolAgentMessage tool_agent_message = 9 [json_name = "toolAgentMessage"]; // Placeholder
+    ContextStatusUpdate context_status_update = 10 [json_name = "contextStatusUpdate"];
+    MissingContextItems missing_context_items = 11 [json_name = "missingContextItems"];
+    Usage usage = 12;
+    ToolCallsStart tool_calls_start = 13 [json_name = "toolCallsStart"];
+  }
+}
+
+
+// ============================================================
+// === Placeholder Definitions for Other Service RPCs ===
+// ============================================================
+
+// Used by StreamUnifiedChat
+message StreamUnifiedChatRequest { /* Placeholder */ }
+message StreamUnifiedChatResponse { /* Placeholder */ }
+
+// Used by StreamUnifiedChatWithTools
+message StreamUnifiedChatWithToolsRequest { /* Placeholder */ }
+// Uses StreamUnifiedChatWithToolsResponse defined above
+
+// Used by StreamParallelApply
+message EditFileParams { string target_file = 1; string code_edit = 2; string instructions = 3; }
+message StreamParallelApplyRequest { repeated EditFileParams edits = 1; }
+message StreamParallelApplyResponse { string edit_id = 1; bool success = 2; optional string error_message = 3; }
+
+// Used by WarmStreamUnifiedChatWithTools & WarmFullFileCmdK
+message WarmResponse { bool warmed_up = 1; /* Placeholder */ } // Assuming Lpt = WarmResponse
+
+
+// =============================================
+// === Chat Service Definition ===
+// =============================================
+
+service ChatService {
+  // GetPromptDryRun
+  rpc GetPromptDryRun(google.protobuf.Empty) returns (GetPromptDryRunResponse);
+
+  // StreamUnifiedChat
+  rpc StreamUnifiedChat(StreamUnifiedChatRequest) returns (stream StreamUnifiedChatResponse); // Using placeholders
+
+  // StreamUnifiedChatWithTools
+  rpc StreamUnifiedChatWithTools(stream StreamUnifiedChatWithToolsRequest) returns (stream StreamUnifiedChatWithToolsResponse); // Using placeholders / defined response
+
+  // StreamUnifiedChatWithToolsSSE
+  rpc StreamUnifiedChatWithToolsSSE(StreamUnifiedChatWithToolsSSERequest) returns (stream StreamUnifiedChatWithToolsResponse); // Using defined request/response
+
+  // StreamParallelApply
+  rpc StreamParallelApply(StreamParallelApplyRequest) returns (stream StreamParallelApplyResponse); // Using placeholders
+
+  // GetConversationSummary
+  rpc GetConversationSummary(StreamUnifiedChatRequest) returns (ConversationSummary); // Using placeholders
+
+  // WarmStreamUnifiedChatWithTools
+  rpc WarmStreamUnifiedChatWithTools(StreamUnifiedChatRequest) returns (WarmResponse); // Using placeholders
+
+  // StreamFullFileCmdK
+  rpc StreamFullFileCmdK(StreamUnifiedChatRequest) returns (stream StreamUnifiedChatWithToolsResponse); // Using placeholders / defined response
+
+  // WarmFullFileCmdK
+  rpc WarmFullFileCmdK(StreamUnifiedChatRequest) returns (WarmResponse); // Using placeholders
+} 
