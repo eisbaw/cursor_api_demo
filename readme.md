@@ -24,8 +24,11 @@ nix-shell --run "just test"
 # Simple query
 ./ask "Hello"
 
-# Specify model
-./ask -m claude-4.5-opus-high-thinking "Explain quantum computing"
+# Specify model explicitly (optional)
+./ask -m <model-id> "Explain quantum computing"
+
+# Live stream chunks as they arrive
+./ask --stream "Explain quantum computing"
 
 # Pipe input
 echo "What is 2+2?" | ./ask
@@ -35,11 +38,30 @@ echo "What is 2+2?" | ./ask
 
 ```bash
 just test       # Basic end-to-end prompt check
-just demo       # Claude reasoning demo
-just demo2      # Coding prompt demo
-just models     # List available models
+just demo       # End-to-end demo prompt
+just stream-demo # End-to-end live streaming demo
+just test-decoder # Decoder frame test
+just test-all   # Run smoke + decoder + demo
 just help       # Show all commands
 ```
+
+## Verified Scope and Limits
+
+Validated in this workspace (2026-04-01):
+
+- `nix-shell --run "just test"` succeeds (auth + chat path via `ask`).
+- `nix-shell --run "just test-all"` succeeds (smoke + decoder + demo).
+- `AvailableModels` preflight returns `200` via `cursor_http2_client.py`.
+- Experimental agent paths (`cursor_agent_client.py`, `cursor_bidi_client.py`)
+  reach API and stream output, but decoding can include protocol noise.
+
+Current limitations:
+
+- Only a subset of `ClientSideToolV2` handlers are implemented locally.
+- Many agent tools intentionally return `TODO`/not-implemented placeholders.
+- `cursor_agent_client.py` (httpx path) cannot robustly continue server tool
+  requests on the same stream and can end with `ERROR_USER_ABORTED_REQUEST`.
+- `cursor_bidi_client.py` is still experimental for tool-call round-trips.
 
 ## Project Structure
 
@@ -87,10 +109,10 @@ Refresh endpoint:
 Authorization: Bearer {token}
 Content-Type: application/connect+proto
 Connect-Protocol-Version: 1
-x-cursor-client-version: 2.6.22
+x-cursor-client-version: {detected_client_version}
 x-cursor-client-type: ide
-x-cursor-client-os: linux
-x-cursor-client-arch: x86_64
+x-cursor-client-os: {detected_os}
+x-cursor-client-arch: {detected_arch}
 x-cursor-client-os-version: {kernel_or_os_version}
 x-cursor-client-device-type: desktop
 x-cursor-checksum: {jyh_cipher_timestamp}{machine_id}[/mac_machine_id]

@@ -3,10 +3,16 @@
 """
 Cursor Bidirectional Streaming Client using h2
 
-True HTTP/2 bidirectional streaming implementation for Cursor's agent API.
-This allows sending tool results back on the same stream.
+Experimental HTTP/2 bidirectional client for Cursor's agent API.
+It attempts to send tool results back on the same stream using raw h2 control.
 
-Based on reverse engineering analysis of Cursor IDE 2.3.41.
+Originally derived from 2.3.41 reverse-engineering notes and adapted for
+2.6.22 header/auth behavior.
+
+Current state:
+- Request/auth path works against 2.6.22 in this workspace.
+- Stream parsing is still heuristic and output can include protocol noise.
+- Tool-call round-trips are not yet robust across all prompts.
 
 Related analysis documents:
 - TASK-26-tool-schemas.md: ClientSideToolV2Call/Result protobuf schemas
@@ -67,7 +73,6 @@ class CursorBidiClient:
     - See TASK-26-tool-schemas.md for message schemas
     """
     
-    BASE_URL = "api2.cursor.sh"
     PORT = 443
     
     # Tools enabled by default - see TASK-110-tool-enum-mapping.md for full list
@@ -84,7 +89,6 @@ class CursorBidiClient:
     def __init__(self, workspace_root: str = "."):
         self.workspace_root = Path(workspace_root).resolve()
         self.auth_reader = CursorAuthReader()
-        self.token = self.auth_reader.get_bearer_token()
         
         # Get machine ID from storage
         try:
@@ -97,6 +101,8 @@ class CursorBidiClient:
         
         # Use agent client's encoding methods
         self._encoder = CursorAgentClient(workspace_root=str(self.workspace_root))
+        self.base_host = self._encoder.base_host
+        self.token = self._encoder.runtime.get_active_token() or self.auth_reader.get_bearer_token()
         
         # HTTP/2 connection state
         self.conn: Optional[h2.connection.H2Connection] = None
@@ -126,7 +132,7 @@ class CursorBidiClient:
         return [
             (":method", "POST"),
             (":path", "/aiserver.v1.ChatService/StreamUnifiedChatWithTools"),
-            (":authority", self.BASE_URL),
+            (":authority", self.base_host),
             (":scheme", "https"),
             ("authorization", f"Bearer {auth_token}"),
             ("connect-accept-encoding", "gzip"),
@@ -136,14 +142,16 @@ class CursorBidiClient:
             ("x-amzn-trace-id", f"Root={uuid.uuid4()}"),
             ("x-client-key", client_key),
             ("x-cursor-checksum", checksum),
-            ("x-cursor-client-version", "2.3.41"),
+            ("x-cursor-client-version", self._encoder.cursor_version),
             ("x-cursor-client-type", "ide"),
-            ("x-cursor-client-os", "linux"),
-            ("x-cursor-client-arch", "x64"),
+            ("x-cursor-client-os", self._encoder.client_os),
+            ("x-cursor-client-arch", self._encoder.client_arch),
+            ("x-cursor-client-os-version", self._encoder.client_os_version),
             ("x-cursor-client-device-type", "desktop"),
             ("x-cursor-config-version", str(uuid.uuid4())),
-            ("x-cursor-timezone", "Europe/Copenhagen"),
-            ("x-ghost-mode", "true"),
+            ("x-cursor-timezone", self._encoder.client_timezone),
+            ("x-ghost-mode", "true" if self._encoder.ghost_mode else "false"),
+            ("x-new-onboarding-completed", "true" if self._encoder.new_onboarding_completed else "false"),
             ("x-request-id", str(uuid.uuid4())),
             ("x-session-id", session_id),
         ]
@@ -351,8 +359,8 @@ class CursorBidiClient:
             ctx.set_alpn_protocols(['h2'])
             
             # Connect
-            raw_sock = socket.create_connection((self.BASE_URL, self.PORT), timeout=30)
-            self.sock = ctx.wrap_socket(raw_sock, server_hostname=self.BASE_URL)
+            raw_sock = socket.create_connection((self.base_host, self.PORT), timeout=30)
+            self.sock = ctx.wrap_socket(raw_sock, server_hostname=self.base_host)
             
             # Verify ALPN
             negotiated = self.sock.selected_alpn_protocol()
@@ -453,9 +461,10 @@ class CursorBidiClient:
             except:
                 pass
     
-    def run_agent(self, prompt: str, model: str = "claude-4-sonnet",
+    def run_agent(self, prompt: str, model: str = "default",
                   max_tool_calls: int = 10, verbose: bool = False) -> str:
         """Run agent with bidirectional streaming"""
+        self.token = self._encoder.runtime.get_active_token() or self.token
         if not self.token:
             print("Error: No authentication token")
             return ""
@@ -590,7 +599,7 @@ class CursorBidiClient:
 async def main():
     import sys
     
-    model = "claude-4-sonnet"
+    model = "default"
     prompt = "List the files in the current directory"
     verbose = False
     
@@ -605,7 +614,7 @@ async def main():
             i += 1
         elif args[i] == '--help':
             print("Usage: cursor_bidi_client.py [-m model] [-v] [prompt]")
-            print("  -m model   Model to use (default: claude-4-sonnet)")
+            print("  -m model   Model to use (default: default)")
             print("  -v         Verbose output")
             print("  prompt     The prompt to send")
             print()

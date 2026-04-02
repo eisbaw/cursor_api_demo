@@ -3,13 +3,12 @@
 ask - Simple Cursor AI CLI
 Usage: ask "your question"
        echo "question" | ask
-       ask -m claude-3.5-sonnet "your question"
+       ask -m <model-id> "your question"
+       ask --stream "your question"
 """
 
 import asyncio
 import sys
-import os
-import re
 
 def clean_response(text):
     """Response is already properly parsed from protobuf, minimal cleanup needed"""
@@ -20,8 +19,108 @@ def clean_response(text):
     # Just preserve original formatting
     return text.strip()
 
-async def ask_cursor(prompt, model="default"):
+async def ask_cursor_stream(prompt, model="default"):
+    """Stream response text to stdout as chunks arrive."""
+    import contextlib
+    import httpx
+    import io
+    from cursor_http2_client import CursorHTTP2Client
+    from cursor_streaming_decoder import CursorStreamDecoder
+
+    # Suppress internal debug prints while preserving streamed content output.
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        client = CursorHTTP2Client()
+        auth_token = client.get_active_token()
+        if not auth_token:
+            return None
+        if "::" in auth_token:
+            auth_token = auth_token.split("::", 1)[1]
+
+        def build_ctx(token):
+            session_id = client.generate_session_id(token)
+            client_key = client.generate_hashed_64_hex(token)
+            cursor_checksum = client.generate_cursor_checksum(token)
+            return token, session_id, client_key, cursor_checksum
+
+        # Preflight AvailableModels to match normal flow and catch stale token early.
+        auth_token, session_id, client_key, cursor_checksum = build_ctx(auth_token)
+        preflight_headers = client.build_common_headers(
+            auth_token, session_id, client_key, cursor_checksum
+        )
+        preflight_headers["accept-encoding"] = "gzip"
+        preflight_headers["content-type"] = "application/proto"
+        preflight_url = f"{client.base_url}/aiserver.v1.AiService/AvailableModels"
+
+        async with httpx.AsyncClient(http2=False, timeout=10.0) as preflight_client:
+            preflight_response = await preflight_client.post(
+                preflight_url,
+                headers=preflight_headers,
+            )
+            if preflight_response.status_code == 401:
+                refreshed = client.refresh_access_token()
+                if refreshed and refreshed != auth_token:
+                    auth_token, session_id, client_key, cursor_checksum = build_ctx(refreshed)
+                    preflight_headers = client.build_common_headers(
+                        auth_token, session_id, client_key, cursor_checksum
+                    )
+                    preflight_headers["accept-encoding"] = "gzip"
+                    preflight_headers["content-type"] = "application/proto"
+                    preflight_response = await preflight_client.post(
+                        preflight_url,
+                        headers=preflight_headers,
+                    )
+
+            if preflight_response.status_code != 200:
+                return None
+
+    messages = [{"role": "user", "content": prompt}]
+    cursor_body = client.generate_cursor_body_exact(messages, model)
+    chat_url = f"{client.base_url}/aiserver.v1.ChatService/StreamUnifiedChatWithTools"
+
+    async with httpx.AsyncClient(http2=True, timeout=30.0) as chat_client:
+        for attempt in range(2):
+            stream_headers = client.build_common_headers(
+                auth_token, session_id, client_key, cursor_checksum
+            )
+            stream_headers["connect-accept-encoding"] = "gzip"
+            stream_headers["content-type"] = "application/connect+proto"
+
+            async with chat_client.stream(
+                "POST",
+                chat_url,
+                headers=stream_headers,
+                content=cursor_body,
+            ) as response:
+                if response.status_code == 401 and attempt == 0:
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        refreshed = client.refresh_access_token()
+                    if refreshed and refreshed != auth_token:
+                        auth_token, session_id, client_key, cursor_checksum = build_ctx(refreshed)
+                        continue
+
+                if response.status_code != 200:
+                    return None
+
+                decoder = CursorStreamDecoder()
+                chunks = []
+                async for raw_chunk in response.aiter_bytes():
+                    for message in decoder.feed_data(raw_chunk):
+                        if message.msg_type == "content":
+                            chunks.append(message.content)
+                            print(message.content, end="", flush=True)
+
+                result = "".join(chunks)
+                if result and not result.endswith("\n"):
+                    print()
+                return clean_response(result) if result else None
+
+    return None
+
+async def ask_cursor(prompt, model="default", stream=False):
     """Get response from Cursor AI"""
+    if stream:
+        return await ask_cursor_stream(prompt, model)
+
     # Import inside function to control when output happens
     import io
     import contextlib
@@ -39,22 +138,41 @@ async def ask_cursor(prompt, model="default"):
 def main():
     # Parse command line
     model = "default"
+    stream = False
     args = sys.argv[1:]
-    
-    # Check for model flag
-    if len(args) >= 2 and args[0] == "-m":
-        model = args[1]
-        args = args[2:]
+
+    parsed_args = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("-m", "--model"):
+            if i + 1 >= len(args):
+                print("Error: missing value for -m/--model", file=sys.stderr)
+                sys.exit(2)
+            model = args[i + 1]
+            i += 2
+            continue
+        if arg in ("-s", "--stream"):
+            stream = True
+            i += 1
+            continue
+        if arg in ("-h", "--help"):
+            print("Usage: ask [--stream] [-m <model-id>] 'your question'")
+            print("   or: echo 'question' | ask [--stream] [-m <model-id>]")
+            sys.exit(0)
+        parsed_args.append(arg)
+        i += 1
     
     # Get prompt
-    if args:
-        prompt = ' '.join(args)
+    if parsed_args:
+        prompt = " ".join(parsed_args)
     elif not sys.stdin.isatty():
         prompt = sys.stdin.read().strip()
     else:
         print("Usage: ask 'your question'", file=sys.stderr)
         print("   or: echo 'question' | ask", file=sys.stderr)
-        print("   or: ask -m claude-3.5-sonnet 'your question'", file=sys.stderr)
+        print("   or: ask -m <model-id> 'your question'", file=sys.stderr)
+        print("   or: ask --stream 'your question'", file=sys.stderr)
         sys.exit(1)
     
     if not prompt:
@@ -62,9 +180,10 @@ def main():
     
     # Get and print response
     try:
-        response = asyncio.run(ask_cursor(prompt, model))
+        response = asyncio.run(ask_cursor(prompt, model, stream=stream))
         if response:
-            print(response)
+            if not stream:
+                print(response)
         else:
             print("No response received", file=sys.stderr)
             sys.exit(1)

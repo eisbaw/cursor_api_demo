@@ -15,10 +15,10 @@ validate required protocol updates for `2.6.22`.
 
 ## Required 2.6.22 Header Surface (Observed Working)
 
-- `x-cursor-client-version: 2.6.22`
+- `x-cursor-client-version: <detected product version>` (2.6.22 here)
 - `x-cursor-client-type: ide`
-- `x-cursor-client-os: linux`
-- `x-cursor-client-arch: x86_64`
+- `x-cursor-client-os: <detected os>` (`linux` here)
+- `x-cursor-client-arch: <detected arch>` (`x64` here)
 - `x-cursor-client-os-version: <kernel-release>`
 - `x-cursor-client-device-type: desktop`
 - `x-cursor-config-version: <uuid>`
@@ -54,3 +54,13 @@ validate required protocol updates for `2.6.22`.
   - Uses shared `2.6.22` header profile and refresh fallback.
 - `ask`
   - Default model switched to `default` for safer cross-account execution.
+
+## Scope Check After Consolidation (2026-04-01)
+
+- `ask` and `just test-all` remain green after cleanup.
+- `AvailableModels` preflight still returns `200`.
+- Agent clients are still experimental:
+  - stream transport/auth path works;
+  - many `ClientSideToolV2` handlers remain intentionally stubbed;
+  - httpx agent loop can fail with `ERROR_USER_ABORTED_REQUEST` when tool
+    result continuation is expected.

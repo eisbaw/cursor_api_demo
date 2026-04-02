@@ -2,7 +2,7 @@
 """
 Cursor Authentication Token Reader
 Reads the stored authentication tokens from Cursor's local storage
-Updated for Cursor 1.3.7 with embedded AI key support
+Used by the 2.6.22 reverse-engineered client flow
 """
 
 import os
@@ -178,7 +178,7 @@ class CursorAuthReader:
         return tokens.get('access_token')
     
     def get_embedded_ai_key(self) -> str:
-        """Get the embedded AI key used in Cursor 1.3.7+"""
+        """Get the embedded AI key constant used by Cursor clients"""
         return CURSOR_EMBEDDED_AI_KEY
 
 

@@ -15,6 +15,8 @@ import base64
 import json
 import os
 import platform
+import sys
+from urllib.parse import urlparse
 from cursor_auth_reader import CursorAuthReader
 from cursor_chat_proto import ProtobufEncoder
 
@@ -27,61 +29,143 @@ class CursorProperProtobuf:
     def __init__(self):
         self.auth_reader = CursorAuthReader()
         self.token = self.auth_reader.get_bearer_token()
-        self.base_url = DEFAULT_BACKEND_URL
+        self.base_url = os.environ.get("CURSOR_BACKEND_URL", DEFAULT_BACKEND_URL).rstrip("/")
+        self.base_host = self._extract_host(self.base_url)
         self.cursor_version = self._load_cursor_version()
-        self.auth_client_id = DEFAULT_AUTH_CLIENT_ID
+        self.auth_client_id = os.environ.get("CURSOR_AUTH_CLIENT_ID", DEFAULT_AUTH_CLIENT_ID)
         self.client_os = self._normalize_os(platform.system())
         self.client_arch = self._normalize_arch(platform.machine())
-        self.client_os_version = platform.release()
+        self.client_os_version = platform.release() or "unknown"
+        self.client_timezone = self._detect_timezone()
+        self.ghost_mode = self._env_bool("CURSOR_GHOST_MODE", False)
+        self.new_onboarding_completed = self._env_bool("CURSOR_NEW_ONBOARDING_COMPLETED", False)
+
+    def _env_bool(self, key, default):
+        value = os.environ.get(key)
+        if value is None:
+            return default
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _extract_host(self, base_url):
+        try:
+            parsed = urlparse(base_url if "://" in base_url else f"https://{base_url}")
+            if parsed.netloc:
+                return parsed.netloc
+            if parsed.path:
+                return parsed.path
+        except Exception:
+            pass
+        return "api2.cursor.sh"
 
     def _normalize_os(self, system):
         normalized = {
             "linux": "linux",
             "darwin": "darwin",
-            "windows": "windows",
+            "windows": "win32",
         }
-        return normalized.get(system.lower(), "linux")
+        lowered = system.lower()
+        return normalized.get(lowered, lowered or "linux")
 
     def _normalize_arch(self, arch):
         lowered = arch.lower()
         if lowered in ("x86_64", "amd64"):
-            return "x86_64"
+            return "x64"
         if lowered in ("aarch64", "arm64"):
             return "arm64"
         return lowered
 
+    def _detect_timezone(self):
+        tz_env = os.environ.get("TZ")
+        if tz_env:
+            return tz_env
+
+        timezone_file = "/etc/timezone"
+        try:
+            with open(timezone_file, "r", encoding="utf-8") as f:
+                tz_name = f.read().strip()
+            if tz_name:
+                return tz_name
+        except Exception:
+            pass
+
+        try:
+            localtime_target = os.path.realpath("/etc/localtime")
+            marker = "/zoneinfo/"
+            if marker in localtime_target:
+                return localtime_target.split(marker, 1)[1]
+        except Exception:
+            pass
+
+        # Last-resort fallback when no IANA zone can be discovered.
+        return "UTC"
+
+    def _version_key(self, version):
+        parts = []
+        for part in version.split("."):
+            if part.isdigit():
+                parts.append(int(part))
+                continue
+            digits = "".join(ch for ch in part if ch.isdigit())
+            parts.append(int(digits) if digits else 0)
+        return tuple(parts)
+
+    def _discover_product_json_paths(self):
+        base_dir = os.path.dirname(__file__)
+        discovered = []
+        try:
+            entries = os.listdir(base_dir)
+        except Exception:
+            return discovered
+
+        for entry in entries:
+            entry_path = os.path.join(base_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+
+            if entry.startswith("reveng_"):
+                discovered.append(
+                    os.path.join(entry_path, "original", "product.json")
+                )
+
+            if entry.startswith("squashfs-root"):
+                discovered.append(
+                    os.path.join(
+                        entry_path,
+                        "usr",
+                        "share",
+                        "cursor",
+                        "resources",
+                        "app",
+                        "product.json",
+                    )
+                )
+
+        # Keep deterministic ordering for stable behavior.
+        return sorted(set(discovered))
+
     def _load_cursor_version(self):
         """
-        Resolve the active Cursor version from the extracted 2.6.22 product.json.
+        Resolve the active Cursor version from available product.json files.
         Falls back to DEFAULT_CURSOR_VERSION when unavailable.
         """
-        product_paths = [
-            os.path.join(
-                os.path.dirname(__file__),
-                "reveng_2.6.22",
-                "original",
-                "product.json",
-            ),
-            os.path.join(
-                os.path.dirname(__file__),
-                "squashfs-root-2.6.22",
-                "usr",
-                "share",
-                "cursor",
-                "resources",
-                "app",
-                "product.json",
-            ),
-        ]
+        env_version = os.environ.get("CURSOR_CLIENT_VERSION")
+        if env_version:
+            return env_version
+
+        product_paths = self._discover_product_json_paths()
+        best_version = None
         for path in product_paths:
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 version = data.get("version")
                 if isinstance(version, str) and version:
-                    return version
+                    if best_version is None or self._version_key(version) > self._version_key(best_version):
+                        best_version = version
             except Exception:
                 continue
+        if best_version:
+            return best_version
         return DEFAULT_CURSOR_VERSION
 
     def _decode_jwt_exp(self, token):
@@ -160,12 +244,12 @@ class CursorProperProtobuf:
             "x-cursor-client-os-version": self.client_os_version,
             "x-cursor-client-device-type": "desktop",
             "x-cursor-config-version": str(uuid.uuid4()),
-            "x-cursor-timezone": "Europe/Copenhagen",
-            "x-ghost-mode": "false",
-            "x-new-onboarding-completed": "false",
+            "x-cursor-timezone": self.client_timezone,
+            "x-ghost-mode": "true" if self.ghost_mode else "false",
+            "x-new-onboarding-completed": "true" if self.new_onboarding_completed else "false",
             "x-request-id": request_id,
             "x-session-id": session_id,
-            "host": "api2.cursor.sh",
+            "host": self.base_host,
         }
         
     def generate_hashed_64_hex(self, input_str, salt=''):
@@ -311,16 +395,16 @@ class CursorProperProtobuf:
         msg = b''
         
         # string os = 1;
-        msg += ProtobufEncoder.encode_field(1, 2, "linux")
+        msg += ProtobufEncoder.encode_field(1, 2, self.client_os)
         
         # string arch = 2;
-        msg += ProtobufEncoder.encode_field(2, 2, "x64")
+        msg += ProtobufEncoder.encode_field(2, 2, self.client_arch)
         
         # string version = 3;
-        msg += ProtobufEncoder.encode_field(3, 2, "6.13.0")
+        msg += ProtobufEncoder.encode_field(3, 2, self.client_os_version)
         
         # string path = 4;
-        msg += ProtobufEncoder.encode_field(4, 2, "/usr/bin/python3")
+        msg += ProtobufEncoder.encode_field(4, 2, sys.executable or "python3")
         
         # string timestamp = 5;
         from datetime import datetime

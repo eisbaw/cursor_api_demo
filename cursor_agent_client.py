@@ -4,15 +4,16 @@
 Cursor Agent Client with Tool Calling Support
 
 This client implements Agent mode communication with Cursor's API.
-Based on reverse engineering analysis of Cursor IDE 2.3.41.
+Originally derived from 2.3.41 reverse-engineering notes and adapted for
+2.6.22 header/auth behavior.
 
 Status:
-- [WORKING] Agent mode request encoding (unified_mode=AGENT, is_agentic=true)
-- [WORKING] supported_tools field with ClientSideToolV2 enum values
-- [WORKING] Tool call detection from server responses
-- [WORKING] Local tool execution (read_file, list_dir, grep_search, etc.)
-- [WORKING] Tool result encoding (ClientSideToolV2Result)
-- [LIMITED] Bidirectional streaming (httpx doesn't support writing after initial request)
+- [VERIFIED] Agent request path reaches API and returns streamed output (HTTP 200)
+- [VERIFIED] Core local tool executor paths work (list/read/grep/terminal/edit)
+- [PARTIAL] Tool-call extraction is heuristic and can emit noisy/fragmented output
+- [LIMITED] Many ClientSideToolV2 handlers are intentionally stubbed (`TODO:`)
+- [LIMITED] `httpx` path cannot write tool results on same stream and can hit
+  `ERROR_USER_ABORTED_REQUEST` when server expects tool-result continuation
 
 To send tool results back, the client needs true HTTP/2 bidirectional streaming.
 Options for future improvement:
@@ -38,12 +39,13 @@ import time
 import os
 import subprocess
 import json
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 
-from cursor_auth_reader import CursorAuthReader
 from cursor_chat_proto import ProtobufEncoder
+from cursor_proper_protobuf import CursorProperProtobuf
 
 
 # ClientSideToolV2 enum values (from TASK-110-tool-enum-mapping.md)
@@ -878,9 +880,18 @@ class CursorAgentClient:
     ]
     
     def __init__(self, workspace_root: str = "."):
-        self.auth_reader = CursorAuthReader()
-        self.token = self.auth_reader.get_bearer_token()
-        self.base_url = "https://api2.cursor.sh"
+        self.runtime = CursorProperProtobuf()
+        self.auth_reader = self.runtime.auth_reader
+        self.token = self.runtime.get_active_token() or self.auth_reader.get_bearer_token()
+        self.base_url = self.runtime.base_url
+        self.base_host = self.runtime.base_host
+        self.cursor_version = self.runtime.cursor_version
+        self.client_os = self.runtime.client_os
+        self.client_arch = self.runtime.client_arch
+        self.client_os_version = self.runtime.client_os_version
+        self.client_timezone = self.runtime.client_timezone
+        self.ghost_mode = self.runtime.ghost_mode
+        self.new_onboarding_completed = self.runtime.new_onboarding_completed
         self.tool_executor = ToolExecutor(workspace_root)
         self.workspace_root = Path(workspace_root).resolve()
         
@@ -896,24 +907,7 @@ class CursorAgentClient:
     
     def get_machine_id(self) -> Optional[str]:
         """Get machine ID from Cursor storage"""
-        import sqlite3
-        db_path = self.auth_reader.storage_path
-        if not db_path:
-            return None
-        try:
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-            cursor.execute("SELECT value FROM ItemTable WHERE key = 'storage.serviceMachineId'")
-            row = cursor.fetchone()
-            conn.close()
-            if row:
-                val = row[0]
-                if isinstance(val, bytes):
-                    val = val.decode('utf-8')
-                return val
-        except:
-            pass
-        return None
+        return self.runtime.get_machine_id()
     
     def generate_cursor_checksum(self, token: str) -> str:
         """Generate checksum (Jyh cipher)"""
@@ -994,10 +988,10 @@ class CursorAgentClient:
     def encode_metadata(self) -> bytes:
         """Encode Metadata"""
         msg = b''
-        msg += ProtobufEncoder.encode_field(1, 2, "linux")
-        msg += ProtobufEncoder.encode_field(2, 2, "x64")
-        msg += ProtobufEncoder.encode_field(3, 2, "6.13.0")
-        msg += ProtobufEncoder.encode_field(4, 2, "/usr/bin/python3")
+        msg += ProtobufEncoder.encode_field(1, 2, self.client_os)
+        msg += ProtobufEncoder.encode_field(2, 2, self.client_arch)
+        msg += ProtobufEncoder.encode_field(3, 2, self.client_os_version)
+        msg += ProtobufEncoder.encode_field(4, 2, sys.executable or "python3")
         from datetime import datetime
         msg += ProtobufEncoder.encode_field(5, 2, datetime.now().isoformat())
         return msg
@@ -1468,17 +1462,19 @@ class CursorAgentClient:
             'x-amzn-trace-id': f'Root={uuid.uuid4()}',
             'x-client-key': client_key,
             'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '2.3.41',
+            'x-cursor-client-version': self.cursor_version,
             'x-cursor-client-type': 'ide',
-            'x-cursor-client-os': 'linux',
-            'x-cursor-client-arch': 'x64',
+            'x-cursor-client-os': self.client_os,
+            'x-cursor-client-arch': self.client_arch,
+            'x-cursor-client-os-version': self.client_os_version,
             'x-cursor-client-device-type': 'desktop',
             'x-cursor-config-version': str(uuid.uuid4()),
-            'x-cursor-timezone': 'Europe/Copenhagen',
-            'x-ghost-mode': 'true',
+            'x-cursor-timezone': self.client_timezone,
+            'x-ghost-mode': 'true' if self.ghost_mode else 'false',
+            'x-new-onboarding-completed': 'true' if self.new_onboarding_completed else 'false',
             'x-request-id': str(uuid.uuid4()),
             'x-session-id': session_id,
-            'Host': 'api2.cursor.sh'
+            'Host': self.base_host
         }
     
     def encode_tool_result_request(self, tool: int, tool_call_id: str, result: ToolResult) -> bytes:
@@ -1538,9 +1534,10 @@ class CursorAgentClient:
                 print(f"[BidiAppend error: {e}]")
             return False
     
-    async def run_agent_loop(self, prompt: str, model: str = "claude-4-sonnet",
+    async def run_agent_loop(self, prompt: str, model: str = "default",
                             max_tool_calls: int = 10, verbose: bool = False) -> str:
         """Run agent using a conversation loop - new request for each tool result"""
+        self.token = self.runtime.get_active_token() or self.token
         if not self.token:
             print("Error: No authentication token")
             return ""
@@ -1649,14 +1646,14 @@ class CursorAgentClient:
             print()
             return full_response
     
-    async def run_agent(self, prompt: str, model: str = "claude-4-sonnet",
+    async def run_agent(self, prompt: str, model: str = "default",
                        max_tool_calls: int = 10, verbose: bool = False,
                        execute_tools: bool = True) -> str:
         """Run agent with tool calling support
         
         Args:
             prompt: The user prompt
-            model: Model name (default: claude-4-sonnet)
+            model: Model name (default: default)
             max_tool_calls: Maximum tool calls to detect
             verbose: Print verbose output
             execute_tools: Execute detected tools locally (can't send results back yet)
@@ -1665,6 +1662,7 @@ class CursorAgentClient:
         so tool results can't be sent back to the server on the same connection.
         Tools are executed locally for demonstration purposes.
         """
+        self.token = self.runtime.get_active_token() or self.token
         if not self.token:
             print("Error: No authentication token")
             return ""
@@ -1762,7 +1760,7 @@ async def main():
     import sys
     
     # Parse arguments
-    model = "claude-4-sonnet"
+    model = "default"
     prompt = "List the files in the current directory"
     verbose = False
     max_tools = 10
@@ -1785,7 +1783,7 @@ async def main():
             i += 1
         elif args[i] == '--help':
             print("Usage: cursor_agent_client.py [-m model] [-v] [-t N] [--no-exec] [prompt]")
-            print("  -m model   Model to use (default: claude-4-sonnet)")
+            print("  -m model   Model to use (default: default)")
             print("  -v         Verbose output")
             print("  -t N       Maximum tool calls to detect (default: 10)")
             print("  --no-exec  Don't execute tools locally (detection only)")

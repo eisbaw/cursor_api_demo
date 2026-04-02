@@ -46,6 +46,17 @@
 - Implementation notes and command transcripts are in:
   `analysis/TASK-304-auth-models-chat.md`.
 
+## Scope and Limitation Check (2026-04-01)
+
+- `ask` workflow remains healthy after cleanup (`just test`, `just test-all`).
+- `AvailableModels` preflight remains healthy (`Session: 200`).
+- Experimental agent paths (`cursor_agent_client.py`, `cursor_bidi_client.py`)
+  still connect and stream, but are not production-clean yet:
+  - decoded output can include transport/protobuf noise;
+  - only a subset of local tool handlers are implemented;
+  - some server tool-call flows still abort when round-trip continuation is
+    incomplete (`ERROR_USER_ABORTED_REQUEST` observed in agent loop).
+
 ## Open Questions
 
 1. Which request header set changed between `2.3.41` and `2.6.22`?
