@@ -92,7 +92,10 @@ class CursorAuthReader:
             return None
             
         try:
-            conn = sqlite3.connect(str(self.storage_path))
+            # Cursor can keep the DB locked while running; immutable read-only
+            # mode allows non-blocking reads for token extraction.
+            db_uri = f"file:{self.storage_path}?mode=ro&immutable=1"
+            conn = sqlite3.connect(db_uri, uri=True, timeout=10.0)
             cursor = conn.cursor()
             
             # Try different table names that might store the data

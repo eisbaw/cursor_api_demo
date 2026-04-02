@@ -22,75 +22,75 @@ class CursorHTTP2Client(CursorProperProtobuf):
     async def establish_session_http2(self, auth_token, session_id, client_key, cursor_checksum):
         """Call AvailableModels - this works with HTTP/1.1"""
         print("Establishing session (HTTP/1.1)...")
-        
-        import platform
-        import sys
-        
+
         url = f"{self.base_url}/aiserver.v1.AiService/AvailableModels"
-        headers = {
-            'accept-encoding': 'gzip',
-            'authorization': f'Bearer {auth_token}',
-            'connect-protocol-version': '1',
-            'content-type': 'application/proto',  # Note: different content-type
-            'user-agent': 'connect-es/1.6.1',
-            'x-amzn-trace-id': f'Root={uuid.uuid4()}',
-            'x-client-key': client_key,
-            'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '2.3.41',  # Must match product.json version
-            'x-cursor-client-type': 'ide',
-            'x-cursor-client-os': sys.platform,
-            'x-cursor-client-arch': platform.machine(),
-            'x-cursor-client-device-type': 'desktop',
-            'x-cursor-timezone': 'Europe/Copenhagen',
-            'x-ghost-mode': 'true',
-            'x-request-id': str(uuid.uuid4()),
-            'x-session-id': session_id,
-            'Host': 'api2.cursor.sh',
-        }
+        headers = self.build_common_headers(auth_token, session_id, client_key, cursor_checksum)
+        headers["accept-encoding"] = "gzip"
+        headers["content-type"] = "application/proto"
         
         # Use HTTP/1.1 for AvailableModels (this works)
         async with httpx.AsyncClient(http2=False, timeout=10.0) as client:
             response = await client.post(url, headers=headers)
+            if response.status_code == 401:
+                refreshed = self.refresh_access_token()
+                if refreshed and refreshed != auth_token:
+                    headers["authorization"] = f"Bearer {refreshed}"
+                    response = await client.post(url, headers=headers)
             print(f"Session: {response.status_code}")
             return response.status_code == 200
     
     async def send_chat_http2(self, messages, model, auth_token, session_id, client_key, cursor_checksum):
         """Send chat using HTTP/2 - THE KEY DIFFERENCE!"""
         print(f"Sending to {model} with HTTP/2...")
-        
-        import platform
-        import sys
-        
+
         cursor_body = self.generate_cursor_body_exact(messages, model)
         print(f"Body size: {len(cursor_body)} bytes")
         
         url = f"{self.base_url}/aiserver.v1.ChatService/StreamUnifiedChatWithTools"
-        headers = {
-            'authorization': f'Bearer {auth_token}',
-            'connect-accept-encoding': 'gzip',
-            'connect-protocol-version': '1',
-            'content-type': 'application/connect+proto',  # ConnectRPC content type
-            'user-agent': 'connect-es/1.6.1',
-            'x-amzn-trace-id': f'Root={uuid.uuid4()}',
-            'x-client-key': client_key,
-            'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '2.3.41',  # Must match product.json version
-            'x-cursor-client-type': 'ide',
-            'x-cursor-client-os': sys.platform,
-            'x-cursor-client-arch': platform.machine(),
-            'x-cursor-client-device-type': 'desktop',
-            'x-cursor-timezone': 'Europe/Copenhagen',
-            'x-ghost-mode': 'true',
-            'x-request-id': str(uuid.uuid4()),
-            'x-session-id': session_id,
-            'Host': 'api2.cursor.sh'
-        }
+        headers = self.build_common_headers(auth_token, session_id, client_key, cursor_checksum)
+        headers["connect-accept-encoding"] = "gzip"
+        headers["content-type"] = "application/connect+proto"
         
         # Use HTTP/2 instead of HTTP/1.1
         async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
             try:
                 print("Using HTTP/2 protocol...")
                 async with client.stream('POST', url, headers=headers, content=cursor_body) as response:
+                    if response.status_code == 401:
+                        refreshed = self.refresh_access_token()
+                        if refreshed and refreshed != auth_token:
+                            headers["authorization"] = f"Bearer {refreshed}"
+                            async with client.stream('POST', url, headers=headers, content=cursor_body) as retry_response:
+                                response = retry_response
+                                print(f"Status: {response.status_code}")
+                                print(f"HTTP version: {response.http_version}")
+                                if response.status_code != 200:
+                                    error = await response.aread()
+                                    print(f"Error {response.status_code}: {error.decode('utf-8', errors='ignore')[:200]}")
+                                    return None
+                                print("SUCCESS: HTTP/2 works. Streaming response:")
+                                decoder = CursorStreamDecoder()
+                                collected_content = []
+                                chunk_count = 0
+                                async for chunk in response.aiter_bytes():
+                                    chunk_count += 1
+                                    messages = decoder.feed_data(chunk)
+                                    for message in messages:
+                                        print(f"[{message.msg_type.upper()}] {message.content[:100]}{'...' if len(message.content) > 100 else ''}")
+                                        if message.msg_type == "content":
+                                            collected_content.append(message.content)
+                                        elif message.msg_type == "stream_end":
+                                            print("Stream ended")
+                                            break
+                                    if chunk_count > 100:
+                                        print("Warning: stopping after 100 chunks")
+                                        break
+                                if collected_content:
+                                    result = ''.join(collected_content)
+                                    print(f"\nSUCCESS: Properly decoded streaming response:")
+                                    print(f"Total content length: {len(result)} characters")
+                                    return result
+                                return "No content received"
                     print(f"Status: {response.status_code}")
                     print(f"HTTP version: {response.http_version}")
                     
@@ -137,14 +137,14 @@ class CursorHTTP2Client(CursorProperProtobuf):
         
         return None
     
-    async def test_http2_breakthrough(self, prompt="Hello! Please respond with 'Hi from Cursor API!'", model="gpt-4"):
+    async def test_http2_breakthrough(self, prompt="Hello! Please respond with 'Hi from Cursor API!'", model="default"):
         """Test the HTTP/2 breakthrough"""
-        if not self.token:
+        auth_token = self.get_active_token()
+        if not auth_token:
             print("Error: No token")
             return None
         
         # Process auth token
-        auth_token = self.token
         if '::' in auth_token:
             auth_token = auth_token.split('::')[1]
         

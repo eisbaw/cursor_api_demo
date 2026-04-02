@@ -20,7 +20,7 @@ def clean_response(text):
     # Just preserve original formatting
     return text.strip()
 
-async def ask_cursor(prompt, model="gpt-4"):
+async def ask_cursor(prompt, model="default"):
     """Get response from Cursor AI"""
     # Import inside function to control when output happens
     import io
@@ -38,7 +38,7 @@ async def ask_cursor(prompt, model="gpt-4"):
 
 def main():
     # Parse command line
-    model = "gpt-4"
+    model = "default"
     args = sys.argv[1:]
     
     # Check for model flag

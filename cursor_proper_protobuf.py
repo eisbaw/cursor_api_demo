@@ -12,14 +12,161 @@ import struct
 import gzip
 import time
 import base64
+import json
+import os
+import platform
 from cursor_auth_reader import CursorAuthReader
 from cursor_chat_proto import ProtobufEncoder
+
+DEFAULT_BACKEND_URL = "https://api2.cursor.sh"
+DEFAULT_CURSOR_VERSION = "2.6.22"
+DEFAULT_AUTH_CLIENT_ID = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB"
+TOKEN_REFRESH_SKEW_SECONDS = 120
 
 class CursorProperProtobuf:
     def __init__(self):
         self.auth_reader = CursorAuthReader()
         self.token = self.auth_reader.get_bearer_token()
-        self.base_url = "https://api2.cursor.sh"
+        self.base_url = DEFAULT_BACKEND_URL
+        self.cursor_version = self._load_cursor_version()
+        self.auth_client_id = DEFAULT_AUTH_CLIENT_ID
+        self.client_os = self._normalize_os(platform.system())
+        self.client_arch = self._normalize_arch(platform.machine())
+        self.client_os_version = platform.release()
+
+    def _normalize_os(self, system):
+        normalized = {
+            "linux": "linux",
+            "darwin": "darwin",
+            "windows": "windows",
+        }
+        return normalized.get(system.lower(), "linux")
+
+    def _normalize_arch(self, arch):
+        lowered = arch.lower()
+        if lowered in ("x86_64", "amd64"):
+            return "x86_64"
+        if lowered in ("aarch64", "arm64"):
+            return "arm64"
+        return lowered
+
+    def _load_cursor_version(self):
+        """
+        Resolve the active Cursor version from the extracted 2.6.22 product.json.
+        Falls back to DEFAULT_CURSOR_VERSION when unavailable.
+        """
+        product_paths = [
+            os.path.join(
+                os.path.dirname(__file__),
+                "reveng_2.6.22",
+                "original",
+                "product.json",
+            ),
+            os.path.join(
+                os.path.dirname(__file__),
+                "squashfs-root-2.6.22",
+                "usr",
+                "share",
+                "cursor",
+                "resources",
+                "app",
+                "product.json",
+            ),
+        ]
+        for path in product_paths:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                version = data.get("version")
+                if isinstance(version, str) and version:
+                    return version
+            except Exception:
+                continue
+        return DEFAULT_CURSOR_VERSION
+
+    def _decode_jwt_exp(self, token):
+        try:
+            payload = token.split(".")[1]
+            payload += "=" * (-len(payload) % 4)
+            data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+            return int(data["exp"])
+        except Exception:
+            return None
+
+    def _token_needs_refresh(self, token):
+        exp = self._decode_jwt_exp(token)
+        if exp is None:
+            return False
+        return exp - int(time.time()) < TOKEN_REFRESH_SKEW_SECONDS
+
+    def refresh_access_token(self):
+        """
+        Refresh OAuth access token using stored refresh token.
+        Cursor 2.6.22 uses POST {backendUrl}/oauth/token with grant_type refresh_token.
+        """
+        tokens = self.auth_reader.get_auth_tokens()
+        refresh_token = tokens.get("refresh_token")
+        if not refresh_token:
+            return None
+
+        payload = {
+            "grant_type": "refresh_token",
+            "client_id": self.auth_client_id,
+            "refresh_token": refresh_token,
+        }
+        try:
+            response = httpx.post(
+                f"{self.base_url}/oauth/token",
+                json=payload,
+                timeout=20.0,
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            new_access_token = data.get("access_token")
+            if isinstance(new_access_token, str) and new_access_token:
+                self.token = new_access_token
+                return new_access_token
+        except Exception:
+            return None
+        return None
+
+    def get_active_token(self, force_refresh=False):
+        token = self.token
+        if not token:
+            token = self.auth_reader.get_bearer_token()
+            self.token = token
+        if not token:
+            return None
+        if force_refresh or self._token_needs_refresh(token):
+            refreshed = self.refresh_access_token()
+            if refreshed:
+                return refreshed
+        return token
+
+    def build_common_headers(self, auth_token, session_id, client_key, cursor_checksum):
+        request_id = str(uuid.uuid4())
+        return {
+            "authorization": f"Bearer {auth_token}",
+            "connect-protocol-version": "1",
+            "user-agent": "connect-es/1.6.1",
+            "x-amzn-trace-id": f"Root={request_id}",
+            "x-client-key": client_key,
+            "x-cursor-checksum": cursor_checksum,
+            "x-cursor-client-version": self.cursor_version,
+            "x-cursor-client-type": "ide",
+            "x-cursor-client-os": self.client_os,
+            "x-cursor-client-arch": self.client_arch,
+            "x-cursor-client-os-version": self.client_os_version,
+            "x-cursor-client-device-type": "desktop",
+            "x-cursor-config-version": str(uuid.uuid4()),
+            "x-cursor-timezone": "Europe/Copenhagen",
+            "x-ghost-mode": "false",
+            "x-new-onboarding-completed": "false",
+            "x-request-id": request_id,
+            "x-session-id": session_id,
+            "host": "api2.cursor.sh",
+        }
         
     def generate_hashed_64_hex(self, input_str, salt=''):
         """Generate SHA-256 hash like JS generateHashed64Hex"""
@@ -38,7 +185,8 @@ class CursorProperProtobuf:
         if not db_path:
             return None
         try:
-            conn = sqlite3.connect(str(db_path))
+            db_uri = f"file:{db_path}?mode=ro&immutable=1"
+            conn = sqlite3.connect(db_uri, uri=True, timeout=10.0)
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM ItemTable WHERE key = 'storage.serviceMachineId'")
             row = cursor.fetchone()
@@ -336,26 +484,17 @@ class CursorProperProtobuf:
         print("Establishing session...")
         
         url = f"{self.base_url}/aiserver.v1.AiService/AvailableModels"
-        headers = {
-            'accept-encoding': 'gzip',
-            'authorization': f'Bearer {auth_token}',
-            'connect-protocol-version': '1',
-            'content-type': 'application/proto',
-            'user-agent': 'connect-es/1.6.1',
-            'x-amzn-trace-id': f'Root={uuid.uuid4()}',
-            'x-client-key': client_key,
-            'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '1.1.3',
-            'x-cursor-config-version': str(uuid.uuid4()),
-            'x-cursor-timezone': 'Asia/Shanghai',
-            'x-ghost-mode': 'true',
-            'x-request-id': str(uuid.uuid4()),
-            'x-session-id': session_id,
-            'Host': 'api2.cursor.sh',
-        }
+        headers = self.build_common_headers(auth_token, session_id, client_key, cursor_checksum)
+        headers["accept-encoding"] = "gzip"
+        headers["content-type"] = "application/proto"
         
         async with httpx.AsyncClient(http2=False, timeout=10.0) as client:
             response = await client.post(url, headers=headers)
+            if response.status_code == 401:
+                refreshed = self.refresh_access_token()
+                if refreshed and refreshed != auth_token:
+                    headers["authorization"] = f"Bearer {refreshed}"
+                    response = await client.post(url, headers=headers)
             print(f"Session: {response.status_code}")
             return response.status_code == 200
     
@@ -368,27 +507,40 @@ class CursorProperProtobuf:
         print(f"Body size: {len(cursor_body)} bytes")
         
         url = f"{self.base_url}/aiserver.v1.ChatService/StreamUnifiedChatWithTools"
-        headers = {
-            'authorization': f'Bearer {auth_token}',
-            'connect-accept-encoding': 'gzip',
-            'connect-protocol-version': '1',
-            'content-type': 'application/connect+proto',
-            'user-agent': 'connect-es/1.6.1',
-            'x-amzn-trace-id': f'Root={uuid.uuid4()}',
-            'x-client-key': client_key,
-            'x-cursor-checksum': cursor_checksum,
-            'x-cursor-client-version': '1.1.3',
-            'x-cursor-config-version': str(uuid.uuid4()),
-            'x-cursor-timezone': 'Asia/Shanghai',
-            'x-ghost-mode': 'true',
-            'x-request-id': str(uuid.uuid4()),
-            'x-session-id': session_id,
-            'Host': 'api2.cursor.sh'
-        }
+        headers = self.build_common_headers(auth_token, session_id, client_key, cursor_checksum)
+        headers["connect-accept-encoding"] = "gzip"
+        headers["content-type"] = "application/connect+proto"
         
-        async with httpx.AsyncClient(http2=False, timeout=30.0) as client:
+        async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
             try:
                 async with client.stream('POST', url, headers=headers, content=cursor_body) as response:
+                    if response.status_code == 401:
+                        refreshed = self.refresh_access_token()
+                        if refreshed and refreshed != auth_token:
+                            headers["authorization"] = f"Bearer {refreshed}"
+                            async with client.stream('POST', url, headers=headers, content=cursor_body) as retry_response:
+                                response = retry_response
+                                print(f"Status: {response.status_code}")
+                                if response.status_code != 200:
+                                    error = await response.aread()
+                                    print(f"Error {response.status_code}: {error.decode('utf-8', errors='ignore')[:100]}")
+                                    return None
+                                print("SUCCESS: Streaming response:")
+                                full_text = ""
+                                chunk_count = 0
+                                async for chunk in response.aiter_bytes():
+                                    chunk_count += 1
+                                    try:
+                                        text = chunk.decode('utf-8', errors='ignore')
+                                        if text and len(text) > 3:
+                                            full_text += text
+                                            print(text, end='', flush=True)
+                                    except Exception:
+                                        pass
+                                    if len(full_text) > 1000 or chunk_count > 30:
+                                        break
+                                print(f"\n\nGot {chunk_count} chunks, {len(full_text)} chars total.")
+                                return full_text
                     print(f"Status: {response.status_code}")
                     
                     if response.status_code == 200:
@@ -405,7 +557,7 @@ class CursorProperProtobuf:
                                 if text and len(text) > 3:
                                     full_text += text
                                     print(text, end='', flush=True)
-                            except:
+                            except Exception:
                                 pass
                             
                             if len(full_text) > 1000 or chunk_count > 30:
@@ -422,14 +574,14 @@ class CursorProperProtobuf:
         
         return None
     
-    async def test_proper_protobuf(self, prompt="Hello! Just say 'hi' back.", model="gpt-4"):
+    async def test_proper_protobuf(self, prompt="Hello! Just say 'hi' back.", model="default"):
         """Test with proper protobuf implementation"""
-        if not self.token:
+        auth_token = self.get_active_token()
+        if not auth_token:
             print("Error: No token")
             return None
         
         # Process auth token
-        auth_token = self.token
         if '::' in auth_token:
             auth_token = auth_token.split('::')[1]
         
@@ -463,7 +615,7 @@ async def main():
     
     result = await client.test_proper_protobuf(
         "Hello! Please just respond with 'Hi there!'",
-        "gpt-4"
+        "default"
     )
     
     if result and len(result.strip()) > 10:

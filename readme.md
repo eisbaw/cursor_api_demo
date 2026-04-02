@@ -1,13 +1,22 @@
-# Cursor API Client
+# Cursor API Client (2.6.22)
 
-Reverse-engineered Python client for Cursor IDE API (version 2.3.41).
+Reverse-engineered Python client for Cursor IDE API focused on the `2.6.22`
+protocol, auth flow, and streaming chat path.
 
 ## Quick Start
 
 ```bash
-nix-shell
-just demo
+# End-to-end smoke test (auth + prompt)
+nix-shell --run "just test"
 ```
+
+## Workspace Artifacts
+
+- AppImage: `Cursor-2.6.22-x86_64.AppImage`
+- Extracted root: `squashfs-root-2.6.22/`
+- Core snapshots: `reveng_2.6.22/original/`
+- Pretty-printed bundles: `reveng_2.6.22/beautified/`
+- Findings and deep dives: `reveng_2.6.22/FINDINGS.md`, `reveng_2.6.22/analysis/`
 
 ## Usage
 
@@ -24,89 +33,97 @@ echo "What is 2+2?" | ./ask
 
 ## Available Commands
 
-```
-just demo       # Claude 4.5 Opus demo
-just demo2      # Coding example
-just test       # Basic test (gpt-4)
+```bash
+just test       # Basic end-to-end prompt check
+just demo       # Claude reasoning demo
+just demo2      # Coding prompt demo
 just models     # List available models
 just help       # Show all commands
 ```
 
 ## Project Structure
 
-```
+```text
 ask                         # CLI wrapper
-cursor_http2_client.py      # HTTP/2 client (main entry point)
-cursor_proper_protobuf.py   # Protobuf encoding + checksum generation
+cursor_http2_client.py      # HTTP/2 transport + streaming client
+cursor_proper_protobuf.py   # Header/auth/checksum + protobuf request encoding
 cursor_streaming_decoder.py # Response frame parser
 cursor_auth_reader.py       # SQLite token reader
 cursor_chat_proto.py        # Low-level protobuf encoder
+reveng_2.6.22/              # Decompile/beautify/findings track
 ```
 
 ## Authentication
 
-Reads tokens from Cursor's SQLite storage:
+Reads tokens from Cursor SQLite storage:
+
 - Linux: `~/.config/Cursor/User/globalStorage/state.vscdb`
 - macOS: `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
 - Windows: `%APPDATA%\Cursor\User\globalStorage\state.vscdb`
 
-Keys: `cursorAuth/accessToken`, `storage.serviceMachineId`
+Primary keys:
 
-## API Details
+- `cursorAuth/accessToken`
+- `cursorAuth/refreshToken`
+- `storage.serviceMachineId`
+
+Refresh endpoint:
+
+- `POST https://api2.cursor.sh/oauth/token`
+- payload: `grant_type=refresh_token`, `client_id`, `refresh_token`
+
+## API Details (2.6.22)
 
 ### Endpoints
-- `https://api2.cursor.sh` - Primary API
-- `https://api3.cursor.sh` - Telemetry
-- `https://agent.api5.cursor.sh` - Agent API (privacy mode)
+
+- `https://api2.cursor.sh` - Primary API and OAuth token refresh
+- `https://api3.cursor.sh` - Telemetry and related services
+- `https://agent.api5.cursor.sh` - Agent API (privacy)
 - `https://agentn.api5.cursor.sh` - Agent API (non-privacy)
 
-### Required Headers
-```
+### Required Header Profile
+
+```text
 Authorization: Bearer {token}
 Content-Type: application/connect+proto
 Connect-Protocol-Version: 1
-x-cursor-client-version: 2.3.41
+x-cursor-client-version: 2.6.22
 x-cursor-client-type: ide
 x-cursor-client-os: linux
 x-cursor-client-arch: x86_64
+x-cursor-client-os-version: {kernel_or_os_version}
 x-cursor-client-device-type: desktop
-x-cursor-checksum: {jyh_cipher_timestamp}{machine_id}
-x-ghost-mode: true
+x-cursor-checksum: {jyh_cipher_timestamp}{machine_id}[/mac_machine_id]
+x-cursor-config-version: {uuid}
+x-cursor-timezone: {iana_timezone}
+x-ghost-mode: false
+x-session-id: {uuid-v5-from-token}
+x-request-id: {uuid}
+x-amzn-trace-id: Root={same_request_id}
 ```
 
 ### Protocol
-- Transport: HTTP/2 with ConnectRPC (gRPC-Web variant)
-- Encoding: Binary protobuf with envelope `[type:1][len:4BE][payload]`
-- Chat endpoint: `/aiserver.v1.ChatService/StreamUnifiedChatWithTools`
 
-### Checksum Algorithm (Jyh Cipher)
-```python
-timestamp = int(time.time() * 1000 // 1000000)
-bytes = [timestamp >> 40, timestamp >> 32, timestamp >> 24,
-         timestamp >> 16, timestamp >> 8, timestamp & 255]
-key = 165
-for i in range(6):
-    bytes[i] = ((bytes[i] ^ key) + i) % 256
-    key = bytes[i]
-checksum = base64_urlsafe(bytes) + machine_id
-```
+- Transport: HTTP/2 with ConnectRPC framing
+- Encoding: Binary envelope `[type:1][len:4BE][payload]`
+- Chat endpoint: `/aiserver.v1.ChatService/StreamUnifiedChatWithTools`
+- Model list endpoint: `/aiserver.v1.AiService/AvailableModels`
 
 ## Reverse Engineering
 
-Analysis of Cursor 2.3.41 in `reveng_2.3.41/`:
-- `analysis/` - 128 task analysis documents
-- `original/` - Source files (workbench.desktop.main.js, etc.)
-- `FINDINGS.md` - API endpoints, gRPC services, headers
+Current decompilation and analysis is under `reveng_2.6.22/`.
 
-Task backlog in `backlog/tasks/` (293 pending, 8 completed).
+- `original/` contains raw extracted core bundles
+- `beautified/` contains formatted bundles for analysis
+- `analysis/` contains task-oriented deep dives
+- `FINDINGS.md` tracks confirmed behavior and deltas
+
+Backlog planning and status lives in `backlog/tasks/`.
 
 ## Models
 
-Available models include:
-- `claude-4.5-opus-high-thinking`
-- `claude-4.5-opus-high`
-- `claude-4.5-sonnet-thinking`
-- `claude-4-sonnet`
-- `gpt-4o`
-- `gpt-5.1-codex`
-- `default` (server picks)
+Model availability is dynamic and should be queried from:
+
+- `POST /aiserver.v1.AiService/AvailableModels`
+
+The `ask` CLI defaults to `default` unless `-m` is provided.
